@@ -166,6 +166,29 @@ class StoreDaily(Record, Base):
     refund_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
 
 
+class ProductDaily(Record, Base):
+    __tablename__ = "product_daily"
+    __table_args__ = (
+        UniqueConstraint("product_id", "business_date", name="uq_product_daily_date"),
+        ForeignKeyConstraint(
+            ["product_id", "store_id"],
+            ["products.id", "products.store_id"],
+            name="fk_product_daily_store",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_product_daily_scope", "store_id", "business_date", "product_id"),
+        CheckConstraint("paid_amount >= 0 AND refund_amount >= 0", name="ck_product_daily_money"),
+        CheckConstraint("paid_orders >= 0 AND visitors >= 0", name="ck_product_daily_counts"),
+    )
+    store_id: Mapped[int] = mapped_column(ID)
+    product_id: Mapped[int] = mapped_column(ID)
+    business_date: Mapped[date] = mapped_column(Date)
+    paid_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    paid_orders: Mapped[int] = mapped_column(BigInteger)
+    visitors: Mapped[int] = mapped_column(BigInteger)
+    refund_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+
+
 class AuthSession(Record, Base):
     __tablename__ = "auth_sessions"
     __table_args__ = (
