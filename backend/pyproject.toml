@@ -1,0 +1,42 @@
+# 后端项目依赖由 uv 锁定，安装在本项目 .venv 中。
+[project]
+name = "ecommerce-operation-agent-backend"
+version = "0.1.0"
+description = "Local development foundation for the ecommerce operations assistant"
+requires-python = ">=3.12,<3.13"
+# 运行依赖：API 服务、数据库与迁移、配置、安全及模型 HTTP 客户端。
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.34,<1",
+  "sqlalchemy>=2.0,<3",
+  "pymysql>=1.1,<2",
+  "alembic>=1.14,<2",
+  "pydantic-settings>=2.8,<3",
+  "httpx>=0.28,<1",
+  "cryptography>=44,<50",
+  "argon2-cffi>=23,<26",
+  "prometheus-client>=0.21,<1",
+]
+
+# 开发依赖仅用于测试和代码规范检查。
+[dependency-groups]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+# 与现有 Python 3.12 保持一致，统一格式与基础静态检查。
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

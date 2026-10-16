@@ -1,4 +1,4 @@
-# Deployment credentials generated from .env.example and deployment instructions.
+# 部署凭据、本机隔离环境、依赖目录和构建缓存不提交到版本库。
 .env
 .env.*
 !.env.example
@@ -7,3 +7,10 @@
 /deploy/private/
 **/.venv/
 **/.local/
+
+**/node_modules/
+**/dist/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/*.egg-info/

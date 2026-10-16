@@ -1,0 +1,394 @@
+/* 按 Pen 设计落实浅色工作区、深色导航与青绿色主操作。 */
+:root {
+  font-family: 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  color: #172f32;
+  background: #f3f6f6;
+  --el-color-primary: #087f73;
+  --el-border-radius-base: 6px;
+  --el-color-success: #087f73;
+  --el-font-family: inherit;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+a {
+  color: #087f73;
+  text-decoration: none;
+}
+button,
+input {
+  font: inherit;
+}
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+h1 {
+  font-size: 27px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+h2 {
+  font-size: 18px;
+}
+p {
+  line-height: 1.8;
+}
+code {
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.muted {
+  color: #6b7f82;
+}
+.small {
+  font-size: 12px;
+}
+.eyebrow {
+  font-size: 12px;
+  color: #087f73;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+.full {
+  width: 100%;
+}
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+.sidebar {
+  width: 216px;
+  position: fixed;
+  inset: 0 auto 0 0;
+  background: #142d30;
+  color: #dcece7;
+  padding: 28px 16px;
+  display: flex;
+  flex-direction: column;
+}
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 40px;
+}
+.logo b {
+  background: #a9e4cb;
+  color: #142d30;
+  font-size: 24px;
+  border-radius: 9px;
+  padding: 5px 10px;
+}
+.logo span {
+  font-size: 16px;
+  font-weight: 600;
+}
+.logo small {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 1px;
+  margin-top: 5px;
+  color: #a9bfbe;
+}
+.nav-caption {
+  font-size: 10px;
+  color: #a9bfbe;
+  margin-bottom: 10px;
+}
+.sidebar nav a {
+  display: block;
+  color: #a9bfbe;
+  border-radius: 6px;
+  padding: 14px 12px;
+  margin-bottom: 5px;
+  font-size: 13px;
+}
+.sidebar nav a:hover,
+.sidebar nav a.selected {
+  color: #fff;
+  background: #265148;
+}
+.sidebar-bottom {
+  margin-top: auto;
+  font-size: 13px;
+  padding: 16px 10px 0;
+}
+.sidebar-bottom p {
+  background: #1e393c;
+  padding: 12px;
+  font-size: 11px;
+  color: #a9bfbe;
+}
+.sidebar-bottom small {
+  display: block;
+  color: #a9bfbe;
+  font-size: 10px;
+  line-height: 2;
+}
+.app-main {
+  margin-left: 216px;
+  width: calc(100% - 216px);
+}
+.topbar {
+  height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 30px;
+  background: #fff;
+  font-size: 12px;
+  color: #6b7f82;
+}
+.topbar > div {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+.page {
+  padding: 30px;
+  max-width: 1600px;
+  margin: auto;
+}
+.page-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+.page-heading p {
+  font-size: 13px;
+  color: #6b7f82;
+  margin-bottom: 0;
+}
+.surface {
+  padding: 24px;
+  background: white;
+  border: 1px solid #e2e9e8;
+  border-radius: 8px;
+  margin-bottom: 22px;
+}
+.surface > p {
+  font-size: 13px;
+  color: #6b7f82;
+}
+.surface.narrow {
+  max-width: 620px;
+}
+.surface.empty {
+  padding: 50px;
+  text-align: center;
+}
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+.metric-grid h2 {
+  font-size: 28px;
+  margin-top: 24px;
+}
+.metric-grid .muted {
+  font-size: 12px;
+}
+.metric-grid p {
+  font-size: 12px;
+  color: #6b7f82;
+  margin: 0;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+.toolbar {
+  display: flex;
+  gap: 12px;
+  max-width: 500px;
+  margin-bottom: 22px;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.el-pagination {
+  margin-top: 22px;
+  justify-content: flex-end;
+}
+.el-table {
+  font-size: 13px;
+  --el-table-header-bg-color: #f3f6f6;
+  --el-table-border-color: #eaf0ee;
+}
+.el-table .cell {
+  padding: 12px;
+}
+.el-alert {
+  margin-bottom: 20px;
+}
+.el-select {
+  width: 100%;
+}
+.audit-detail {
+  padding: 20px 40px;
+  background: #f8faf9;
+}
+.audit-detail pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.login-brand {
+  background: #142d30;
+  color: #fff;
+  padding: 85px 10%;
+  display: flex;
+  flex-direction: column;
+}
+.login-brand .eyebrow {
+  color: #a9e4cb;
+}
+.login-brand h1 {
+  font-size: 48px;
+  line-height: 1.5;
+  margin-top: 100px;
+}
+.login-brand p {
+  color: #a9bfbe;
+  max-width: 420px;
+  font-size: 17px;
+}
+.brand-foot {
+  margin-top: auto;
+  padding-top: 90px;
+  line-height: 2;
+  color: #dcece7;
+}
+.brand-foot small {
+  font-size: 12px;
+  color: #a9bfbe;
+}
+.login-form {
+  background: #fff;
+  padding: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-form > div {
+  width: 100%;
+  max-width: 430px;
+}
+.login-form h2 {
+  font-size: 30px;
+  margin: 32px 0 12px;
+}
+.login-form .el-form {
+  margin-top: 30px;
+}
+.login-form .el-input {
+  --el-input-height: 42px;
+}
+.login-form .full {
+  height: 44px;
+  margin: 10px 0;
+}
+.login-form details {
+  margin-top: 30px;
+  font-size: 12px;
+  color: #6b7f82;
+}
+.login-form summary {
+  cursor: pointer;
+}
+.login-form details p {
+  margin-top: 15px;
+}
+@media (max-width: 1000px) {
+  .login-form {
+    padding: 40px;
+  }
+  .login-brand h1 {
+    font-size: 38px;
+  }
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    width: 190px;
+  }
+  .app-main {
+    margin-left: 190px;
+    width: calc(100% - 190px);
+  }
+}
+@media (max-width: 700px) {
+  .sidebar {
+    position: static;
+    width: 100%;
+  }
+  .sidebar nav {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .sidebar-bottom,
+  .nav-caption {
+    display: none;
+  }
+  .logo {
+    margin-bottom: 15px;
+  }
+  .app-shell {
+    display: block;
+  }
+  .app-main {
+    margin: 0;
+    width: 100%;
+  }
+  .page,
+  .topbar {
+    padding: 20px;
+  }
+  .topbar {
+    height: auto;
+    gap: 12px;
+  }
+  .page-heading {
+    align-items: flex-start;
+  }
+  .login-page {
+    display: block;
+  }
+  .login-brand {
+    padding: 30px;
+  }
+  .login-brand h1 {
+    margin-top: 30px;
+  }
+  .login-brand p,
+  .brand-foot {
+    display: none;
+  }
+  .login-form {
+    padding: 30px;
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .surface {
+    padding: 16px;
+  }
+}
