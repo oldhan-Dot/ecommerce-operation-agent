@@ -51,7 +51,7 @@ def audit(db: Session, request: Request, user: User, action: str, target, *, cha
             action=action,
             target_type=target.__tablename__,
             target_id=str(target.id),
-            store_id=target.id if isinstance(target, Store) else None,
+            store_id=target.id if isinstance(target, Store) else getattr(target, "store_id", None),
             request_id=request.state.request_id,
             result="SUCCEEDED",
             redacted_diff=changes or {},

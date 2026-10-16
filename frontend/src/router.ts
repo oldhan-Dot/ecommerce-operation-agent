@@ -17,6 +17,11 @@ export const router = createRouter({
           meta: { title: '店铺管理' },
         },
         {
+          path: 'products',
+          component: () => import('./views/ProductsView.vue'),
+          meta: { title: '商品管理' },
+        },
+        {
           path: 'users',
           component: () => import('./views/UsersView.vue'),
           meta: { title: '团队与权限', admin: true },

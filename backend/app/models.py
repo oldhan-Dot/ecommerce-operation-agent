@@ -1,6 +1,7 @@
 """M1 账号、店铺、会话和审计模型；后续领域模型按独立迁移增加。"""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
@@ -8,9 +9,12 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
+    Numeric,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.mysql import BIGINT, BINARY
@@ -78,6 +82,43 @@ class StoreGrant(Record, Base):
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id", ondelete="RESTRICT"))
     granted_by: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     granted_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Product(Record, Base):
+    __tablename__ = "products"
+    __table_args__ = (
+        UniqueConstraint("store_id", "code", name="uq_product_code"),
+        UniqueConstraint("id", "store_id", name="uq_product_store"),
+        Index("ix_product_scope", "store_id", "status", "id"),
+    )
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id", ondelete="RESTRICT"))
+    code: Mapped[str] = mapped_column(String(64, collation="utf8mb4_bin"))
+    name: Mapped[str] = mapped_column(String(200))
+    category: Mapped[str] = mapped_column(String(128))
+    selling_points: Mapped[str] = mapped_column(Text)
+    brand: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    audience: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="ACTIVE")
+
+
+class Sku(Record, Base):
+    __tablename__ = "skus"
+    __table_args__ = (
+        UniqueConstraint("store_id", "code", name="uq_sku_code"),
+        ForeignKeyConstraint(
+            ["product_id", "store_id"],
+            ["products.id", "products.store_id"],
+            ondelete="RESTRICT",
+            name="fk_sku_product_store",
+        ),
+    )
+    store_id: Mapped[int] = mapped_column(ID)
+    product_id: Mapped[int] = mapped_column(ID)
+    code: Mapped[str] = mapped_column(String(64, collation="utf8mb4_bin"))
+    spec_name: Mapped[str] = mapped_column(String(200))
+    price: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    cost: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
 
 
 class AuthSession(Record, Base):

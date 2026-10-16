@@ -41,9 +41,9 @@ onMounted(async () => {
   </section>
   <section class="surface">
     <h2>本阶段已开放</h2>
-    <p>账号登录、修改密码、店铺管理、角色权限、店铺授权与操作审计。</p>
+    <p>账号登录、修改密码、店铺管理、商品及 SKU 管理、角色权限、店铺授权与操作审计。</p>
     <el-alert
-      title="商品、日经营数据、CSV 导入和经营指标仍在后续 M1 开发范围内，当前不展示模拟经营结果。"
+      title="竞品、日经营数据、CSV 导入和经营指标仍在后续 M1 开发范围内，当前不展示模拟经营结果。"
       type="info"
       :closable="false"
     />

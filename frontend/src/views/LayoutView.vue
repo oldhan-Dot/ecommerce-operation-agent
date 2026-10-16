@@ -25,6 +25,7 @@ async function logout() {
       <nav v-if="!auth.user?.must_change_password">
         <router-link to="/" exact-active-class="selected">▦　工作台</router-link>
         <router-link to="/stores" active-class="selected">▤　店铺管理</router-link>
+        <router-link to="/products" active-class="selected">▧　商品管理</router-link>
         <template v-if="auth.user?.role === 'ADMIN'">
           <router-link to="/users" active-class="selected">♙　团队与权限</router-link>
           <router-link to="/audit" active-class="selected">☷　审计日志</router-link>
