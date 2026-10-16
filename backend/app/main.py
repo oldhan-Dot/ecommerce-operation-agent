@@ -14,6 +14,7 @@ from app.competitors import router as competitor_router
 from app.core.config import Settings, get_settings
 from app.core.db import DatabaseProbe
 from app.core.errors import AppError
+from app.daily_data import router as daily_router
 from app.identity import init_rate_limit, router
 
 
@@ -42,6 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router)
     app.include_router(catalog_router)
     app.include_router(competitor_router)
+    app.include_router(daily_router)
 
     @app.exception_handler(AppError)
     async def business_error(request: Request, exc: AppError):

@@ -37,6 +37,11 @@ export const router = createRouter({
           meta: { title: '审计日志', admin: true },
         },
         {
+          path: 'daily-data/store',
+          component: () => import('./views/StoreDailyView.vue'),
+          meta: { title: '店铺日经营' },
+        },
+        {
           path: 'password',
           component: () => import('./views/PasswordView.vue'),
           meta: { title: '修改密码' },

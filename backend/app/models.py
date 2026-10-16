@@ -7,6 +7,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -148,6 +149,21 @@ class Competitor(Record, Base):
     source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     collected_at: Mapped[date] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(16), default="ACTIVE")
+
+
+class StoreDaily(Record, Base):
+    __tablename__ = "store_daily"
+    __table_args__ = (
+        UniqueConstraint("store_id", "business_date", name="uq_store_daily_date"),
+        CheckConstraint("paid_amount >= 0 AND refund_amount >= 0", name="ck_store_daily_money"),
+        CheckConstraint("paid_orders >= 0 AND visitors >= 0", name="ck_store_daily_counts"),
+    )
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id", ondelete="RESTRICT"))
+    business_date: Mapped[date] = mapped_column(Date)
+    paid_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    paid_orders: Mapped[int] = mapped_column(BigInteger)
+    visitors: Mapped[int] = mapped_column(BigInteger)
+    refund_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
 
 
 class AuthSession(Record, Base):
