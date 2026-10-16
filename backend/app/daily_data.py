@@ -33,13 +33,11 @@ def integer_count(value):
 Count = Annotated[int, BeforeValidator(integer_count), Field(ge=0, le=2**63 - 1)]
 
 
-class StoreDailyInput(Input):
+class DailyIdentityInput(Input):
+    """三类日经营共同的店铺与上海业务日期校验。"""
+
     store_id: EntityId
     business_date: date
-    paid_amount: Money
-    paid_orders: Count
-    visitors: Count
-    refund_amount: Money
 
     @field_validator("business_date", mode="before")
     @classmethod
@@ -54,6 +52,13 @@ class StoreDailyInput(Input):
         if value > business_today():
             raise ValueError("不能录入未来业务日期")
         return value
+
+
+class StoreDailyInput(DailyIdentityInput):
+    paid_amount: Money
+    paid_orders: Count
+    visitors: Count
+    refund_amount: Money
 
 
 class StoreDailyUpdate(StoreDailyInput):

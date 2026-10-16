@@ -29,6 +29,7 @@ async function logout() {
         <router-link to="/competitors" active-class="selected">▥　竞品资料</router-link>
         <router-link to="/daily-data/store" active-class="selected">▦　店铺日经营</router-link>
         <router-link to="/daily-data/product" active-class="selected">▧　商品日经营</router-link>
+        <router-link to="/daily-data/ad" active-class="selected">▥　投放日经营</router-link>
         <template v-if="auth.user?.role === 'ADMIN'">
           <router-link to="/users" active-class="selected">♙　团队与权限</router-link>
           <router-link to="/audit" active-class="selected">☷　审计日志</router-link>

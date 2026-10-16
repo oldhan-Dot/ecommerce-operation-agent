@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from app.ad_daily import router as ad_daily_router
 from app.catalog import router as catalog_router
 from app.competitors import router as competitor_router
 from app.core.config import Settings, get_settings
@@ -46,6 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(competitor_router)
     app.include_router(daily_router)
     app.include_router(product_daily_router)
+    app.include_router(ad_daily_router)
 
     @app.exception_handler(AppError)
     async def business_error(request: Request, exc: AppError):

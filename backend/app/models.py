@@ -189,6 +189,32 @@ class ProductDaily(Record, Base):
     refund_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
 
 
+class AdDaily(Record, Base):
+    __tablename__ = "ad_daily"
+    __table_args__ = (
+        UniqueConstraint("store_id", "channel", "business_date", name="uq_ad_daily_date"),
+        Index("ix_ad_daily_scope", "store_id", "business_date"),
+        CheckConstraint(
+            "spend >= 0 AND (attributed_amount IS NULL OR attributed_amount >= 0)",
+            name="ck_ad_daily_money",
+        ),
+        CheckConstraint("impressions >= 0 AND clicks >= 0", name="ck_ad_daily_counts"),
+        CheckConstraint(
+            "attributed_amount IS NULL OR (attribution_note IS NOT NULL "
+            "AND CHAR_LENGTH(TRIM(attribution_note)) > 0)",
+            name="ck_ad_daily_attribution",
+        ),
+    )
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id", ondelete="RESTRICT"))
+    channel: Mapped[str] = mapped_column(String(64, collation="utf8mb4_bin"))
+    business_date: Mapped[date] = mapped_column(Date)
+    spend: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    impressions: Mapped[int] = mapped_column(BigInteger)
+    clicks: Mapped[int] = mapped_column(BigInteger)
+    attributed_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    attribution_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
 class AuthSession(Record, Base):
     __tablename__ = "auth_sessions"
     __table_args__ = (
