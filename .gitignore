@@ -1,0 +1,9 @@
+# Deployment credentials generated from .env.example and deployment instructions.
+.env
+.env.*
+!.env.example
+/deploy/secrets/*.txt
+/deploy/tls/
+/deploy/private/
+**/.venv/
+**/.local/

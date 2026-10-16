@@ -1,0 +1,41 @@
+name: ecommerce-operation-agent
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ecommerce_agent}
+      MYSQL_USER: ${MYSQL_USER:-ecommerce_app}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
+      - --max-connections=100
+      - --local-infile=OFF
+      - --skip-name-resolve
+      - --require-secure-transport=OFF
+    ports:
+      - "${MYSQL_BIND_IP:-0.0.0.0}:${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'MYSQL_PWD="$$MYSQL_ROOT_PASSWORD" mysql --protocol=tcp --host=127.0.0.1 --user=root --batch --skip-column-names --execute="SELECT 1" >/dev/null 2>&1'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  mysql_data:
