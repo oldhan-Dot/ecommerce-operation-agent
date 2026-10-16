@@ -27,6 +27,11 @@ export const router = createRouter({
           meta: { title: '团队与权限', admin: true },
         },
         {
+          path: 'competitors',
+          component: () => import('./views/CompetitorsView.vue'),
+          meta: { title: '竞品资料' },
+        },
+        {
           path: 'audit',
           component: () => import('./views/AuditView.vue'),
           meta: { title: '审计日志', admin: true },

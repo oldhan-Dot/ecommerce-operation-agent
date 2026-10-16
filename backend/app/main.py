@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.catalog import router as catalog_router
+from app.competitors import router as competitor_router
 from app.core.config import Settings, get_settings
 from app.core.db import DatabaseProbe
 from app.core.errors import AppError
@@ -40,6 +41,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     init_rate_limit(app)
     app.include_router(router)
     app.include_router(catalog_router)
+    app.include_router(competitor_router)
 
     @app.exception_handler(AppError)
     async def business_error(request: Request, exc: AppError):

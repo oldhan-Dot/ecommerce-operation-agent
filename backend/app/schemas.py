@@ -1,5 +1,6 @@
 """身份和店铺接口契约；拒绝额外字段，不回显密码。"""
 
+from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -122,3 +123,21 @@ class ProductInput(Input):
         if len(set(codes)) != len(codes) or len(set(ids)) != len(ids):
             raise ValueError("SKU 编码和 ID 不得重复")
         return values
+
+
+class CompetitorInput(Input):
+    store_id: EntityId
+    code: RequiredText = Field(max_length=64)
+    product_id: EntityId | None = None
+    name: RequiredText = Field(max_length=200)
+    platform: RequiredText = Field(max_length=64)
+    brand: str | None = Field(default=None, max_length=100)
+    spec: str | None = Field(default=None, max_length=200)
+    price: Money | None = None
+    selling_points: str | None = Field(default=None, max_length=5000)
+    excerpt: str | None = Field(default=None, max_length=10000)
+    source_note: RequiredText = Field(max_length=5000)
+    source_url: str | None = Field(default=None, max_length=2048)
+    collected_at: date
+
+    _url = field_validator("source_url")(ProductInput.public_url.__func__)

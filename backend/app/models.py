@@ -1,12 +1,13 @@
 """M1 账号、店铺、会话和审计模型；后续领域模型按独立迁移增加。"""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -119,6 +120,34 @@ class Sku(Record, Base):
     spec_name: Mapped[str] = mapped_column(String(200))
     price: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     cost: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+
+
+class Competitor(Record, Base):
+    __tablename__ = "competitors"
+    __table_args__ = (
+        UniqueConstraint("store_id", "code", name="uq_competitor_code"),
+        ForeignKeyConstraint(
+            ["product_id", "store_id"],
+            ["products.id", "products.store_id"],
+            name="fk_competitor_product_store",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_competitor_scope", "store_id", "status", "collected_at"),
+    )
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id", ondelete="RESTRICT"))
+    code: Mapped[str] = mapped_column(String(64, collation="utf8mb4_bin"))
+    product_id: Mapped[int | None] = mapped_column(ID, nullable=True)
+    name: Mapped[str] = mapped_column(String(200))
+    platform: Mapped[str] = mapped_column(String(64))
+    brand: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    spec: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    selling_points: Mapped[str | None] = mapped_column(Text, nullable=True)
+    excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_note: Mapped[str] = mapped_column(Text)
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    collected_at: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(16), default="ACTIVE")
 
 
 class AuthSession(Record, Base):
