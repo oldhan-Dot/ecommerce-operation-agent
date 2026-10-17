@@ -307,13 +307,13 @@ erDiagram
 | API-01 | POST `/auth/login`；GET `/auth/session`；POST `/auth/logout` | login `{login_name,password}`，Origin 校验与速率限制；session/logout 需会话，logout 需 CSRF | login/session 200 `{user:{id,role,store_ids,must_change_password},csrf_token,expires_at}`；登录 Set-Cookie；logout 204 | 401 AUTH_INVALID_CREDENTIALS；423 AUTH_LOCKED；401 AUTH_SESSION_EXPIRED |
 | API-02 | POST `/products`；PATCH `/products/{id}`；GET `/stores/{id}/dashboard` | 商品 `{store_id,code,name,category,selling_points,skus:[{code,spec_name,price,cost?}]}`；编辑 If-Match；看板 `start_date,end_date` ≤90 日 | 创建 201 `{id,version,skus}`；编辑 200；看板 200 `{period,completeness,metrics,trend,previous_period,warnings}` | 409 DATA_DUPLICATE_KEY / DATA_VERSION_CONFLICT；422 DATA_INVALID；404 RESOURCE_NOT_FOUND |
 | API-03 | POST `/imports`；GET `/imports/{id}`；POST `/imports/{id}/confirm` | 上传 multipart `{type,store_id?,file}` ≤10MB；确认 `{preview_token,allow_overwrite}` + Idempotency-Key | 上传 202 `{id,status:"UPLOADED"}`；查询含计数/错误/预检令牌；确认 202 `{id,status:"IMPORTING"}`，Worker 原子入库 | 413 IMPORT_FILE_TOO_LARGE；422 IMPORT_INVALID_ROWS；409 IMPORT_STALE_PREVIEW；409 IMPORT_OVERWRITE_REQUIRED |
-| API-04 | POST `/ai-tasks`；GET `/ai-tasks/{id}` | 创建包含 task_type、store_id、类型专属 input + Idempotency-Key；选定来源均有权限 | 202 `{id,status:"QUEUED",snapshot_id,queued_at}`；GET 200 追加错误码、产出 ID、时间与重试余量 | 422 AI_INVALID_INPUT；409 MODEL_NOT_CONFIGURED；429 AI_DAILY_LIMIT；404 RESOURCE_NOT_FOUND |
+| API-04 | POST/GET `/ai-tasks`；GET `/ai-tasks/{id}` | 创建包含 task_type、store_id、类型专属 input + Idempotency-Key；选定来源均有权限；列表page/page_size | 首次202、同键同输入回放200；详情追加错误码、产出ID、时间、重试余量、冻结快照与DRAFT正文；列表按权限分页 | 422 DATA_INVALID；409 MODEL_NOT_CONFIGURED/IDEMPOTENCY_CONFLICT；429 AI_DAILY_LIMIT；404 RESOURCE_NOT_FOUND |
 | API-05 | POST `/ai-tasks/{id}/cancel`；POST `/ai-tasks/{id}/retries` | 作者或具管理权限；重试仅 FAILED + Idempotency-Key；取消终态返回已终态 | cancel 200 `{id,status}`；retry 202 `{id,parent_task_id,status:"QUEUED",retry_count}` | 409 AI_INVALID_STATE；409 AI_RETRY_EXHAUSTED；429 AI_DAILY_LIMIT |
 | API-06 | POST `/artifacts/{id}/versions`；POST `/artifact-versions/{id}/submit`；POST `/artifact-versions/{id}/withdraw` | 作者、If-Match；保存 `{base_version_id,title,content}`；提交/撤回带 Idempotency-Key | 保存 201 `{id,version_no,review_status:"DRAFT",artifact_version}`；状态操作 200 返回该版本状态 | 409 ARTIFACT_VERSION_CONFLICT / REVIEW_INVALID_STATE；422 ARTIFACT_INVALID_CONTENT |
 | API-07 | POST `/artifact-versions/{id}/reviews`；GET `/artifact-versions/{id}/export` | 审核 `{decision:"APPROVE"或"REJECT",comment?}` + If-Match + Idempotency-Key；导出 `mode=draft或official` | 审核 200 `{id,review_status,reviewed_at}`；导出 200 `text/markdown` + 安全文件名 Content-Disposition + `Cache-Control: no-store` | 403 REVIEW_SELF_FORBIDDEN；422 REVIEW_COMMENT_REQUIRED；409 REVIEW_INVALID_STATE；409 EXPORT_NOT_APPROVED |
 | API-08 | GET/PUT `/settings/model`；POST `/settings/model/test`；GET `/settings/model/calls`、`/settings/model/calls/{id}`；GET `/audit-events` | 管理员；配置保存需要 If-Match；测试 `{config_version}` 及 Idempotency-Key；审计筛选 actor/store/action/date | 配置 200；测试首次接收 202、同键回放 200，均返回持久 `{call_id,config_id,status,ok,latency_ms,error_code,usage_tokens,created_at,finished_at}`；调用列表返回最近20项及上海当日额度；审计返回分页 | 403 AUTH_FORBIDDEN；409 DATA_VERSION_CONFLICT/IDEMPOTENCY_CONFLICT；422 MODEL_HOST_NOT_ALLOWED；429 AI_DAILY_LIMIT/AI_CONCURRENCY_LIMIT；供应商错误作为调用记录 error_code 返回 |
 
-后台连接测试最多执行至配置超时，API 网关须允许该时限；不包含在普通查询 P95 中。测试失败同样落库调用记录，不返回原始服务商响应体。浏览器超时或断连不自动重试，可用 Idempotency-Key 对账。
+连接测试异步接收后由Worker执行至配置超时，浏览器短请求查询调用记录，不要求创建接口保持整个模型等待时长；不包含在普通查询P95中。测试失败同样落库调用记录，不返回原始服务商响应体。浏览器超时或断连不自动重试，可用Idempotency-Key对账。
 
 ### 6.3 六种 task input 与内容 Schema
 
@@ -329,6 +329,8 @@ erDiagram
 | BUSINESS_REVIEW | start_date、end_date、goal | 1–90日；自动推导紧邻等长上期；两期至少各一条店铺记录 |
 
 任务响应和保存内容共享如下概念结构：
+
+实现进度（2026-10-18）：首个可执行生成器为PRODUCT_ANALYSIS资料模式，当前input严格仅含product_id/goal，冻结名称、分类、卖点、品牌、人群，不纳入SKU及经营数据。上表中的日期参数和其他五类属于后续契约，目前提交这些类型/多余字段会返回422。任务取消、根任务累计两次显式重试、租约/围栏恢复、只读DRAFT已实现；草稿审核与导出接口仍待后续交付。租约以任务id+递增fence_token标识领取方，不执行自动接管重发。
 
 ```json
 {

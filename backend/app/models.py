@@ -132,6 +132,72 @@ class ModelCall(Base):
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     usage_tokens: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    task_id: Mapped[int | None] = mapped_column(ForeignKey("ai_tasks.id"), nullable=True)
+
+
+class AiTask(Record, Base):
+    __tablename__ = "ai_tasks"
+    __table_args__ = (
+        UniqueConstraint("creator_id", "idempotency_key", name="uq_ai_task_request"),
+        Index("ix_ai_task_queue", "status", "queued_at", "id"),
+        Index("ix_ai_task_scope", "store_id", "creator_id", "created_at", "id"),
+        CheckConstraint(
+            "status IN ('QUEUED','RUNNING','SUCCEEDED','FAILED','CANCELLED')",
+            name="ck_ai_task_status",
+        ),
+    )
+    enterprise_id: Mapped[int] = mapped_column(ForeignKey("enterprises.id"))
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"))
+    creator_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    task_type: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16), default="QUEUED")
+    idempotency_key: Mapped[str] = mapped_column(String(64, collation="utf8mb4_bin"))
+    request_hash: Mapped[bytes] = mapped_column(BINARY(32))
+    parent_task_id: Mapped[int | None] = mapped_column(ForeignKey("ai_tasks.id"), nullable=True)
+    root_task_id: Mapped[int | None] = mapped_column(ForeignKey("ai_tasks.id"), nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    model_config_id: Mapped[int] = mapped_column(ForeignKey("model_configs.id"))
+    fence_token: Mapped[int] = mapped_column(BigInteger, default=0)
+    lease_until: Mapped[datetime | None] = mapped_column(PRECISE_TIME, nullable=True)
+    queued_at: Mapped[datetime] = mapped_column(PRECISE_TIME, default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(PRECISE_TIME, nullable=True)
+    deadline_at: Mapped[datetime | None] = mapped_column(PRECISE_TIME, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(PRECISE_TIME, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class InputSnapshot(Base):
+    __tablename__ = "input_snapshots"
+    id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("ai_tasks.id"), unique=True)
+    input_params: Mapped[dict] = mapped_column(JSON)
+    source_refs: Mapped[list] = mapped_column(JSON)
+    data_copy: Mapped[dict] = mapped_column(JSON)
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    missing_items: Mapped[list] = mapped_column(JSON)
+    schema_version: Mapped[str] = mapped_column(String(32), default="1")
+    metric_version: Mapped[str] = mapped_column(String(32), default="1")
+    prompt_version: Mapped[str] = mapped_column(String(32), default="product-profile-v1")
+    sha256: Mapped[bytes] = mapped_column(BINARY(32))
+
+
+class Artifact(Record, Base):
+    __tablename__ = "artifacts"
+    task_id: Mapped[int] = mapped_column(ForeignKey("ai_tasks.id"), unique=True)
+    enterprise_id: Mapped[int] = mapped_column(ForeignKey("enterprises.id"))
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"))
+    creator_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    artifact_type: Mapped[str] = mapped_column(String(32))
+
+
+class ArtifactVersion(Record, Base):
+    __tablename__ = "artifact_versions"
+    __table_args__ = (UniqueConstraint("artifact_id", "version_no", name="uq_artifact_version"),)
+    artifact_id: Mapped[int] = mapped_column(ForeignKey("artifacts.id"))
+    version_no: Mapped[int] = mapped_column(Integer, default=1)
+    title: Mapped[str] = mapped_column(String(200))
+    content: Mapped[dict] = mapped_column(JSON)
+    review_status: Mapped[str] = mapped_column(String(32), default="DRAFT")
 
 
 class User(Record, Base):

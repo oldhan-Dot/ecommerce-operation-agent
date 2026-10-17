@@ -1,4 +1,4 @@
-"""独立 Worker：持久连接测试、调用恢复及 CSV 预检和确认入库；生成任务随后接入。"""
+"""独立 Worker：持久模型调用、商品资料生成、任务恢复及 CSV 预检和确认入库。"""
 
 import json
 import signal
@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.ai_tasks import dispatch_task
 from app.core.config import get_settings
 from app.core.db import DatabaseProbe
 from app.import_execution import process_next_confirmation
@@ -71,6 +72,8 @@ def main() -> None:
                                     flush=True,
                                 )
                         if process_model_call(db, settings):
+                            continue
+                        if dispatch_task(db, settings):
                             continue
                         if process_next_confirmation(db, settings) or process_next_import(
                             db, settings

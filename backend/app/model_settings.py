@@ -167,7 +167,7 @@ def get_configuration(request: Request, p=Depends(administrator), db=Depends(get
     if config:
         last_call = db.scalar(
             select(ModelCall)
-            .where(ModelCall.config_id == config.id)
+            .where(ModelCall.config_id == config.id, ModelCall.purpose == "CONNECTION_TEST")
             .order_by(ModelCall.id.desc())
             .limit(1)
         )

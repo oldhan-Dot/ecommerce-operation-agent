@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Header, Request, Response
 from pydantic import Field
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.dependencies import administrator, get_db
@@ -92,6 +93,16 @@ def recover_locked(db, enterprise_id, now):
             call.error_code = "MODEL_RESULT_UNKNOWN"
         call.finished_at = now
         call.fence_token += 1
+        if call.task_id:
+            from app.ai_tasks import fail_task
+            from app.models import AiTask
+
+            task = db.scalar(
+                select(AiTask)
+                .where(AiTask.id == call.task_id)
+                .execution_options(populate_existing=True)
+            )
+            fail_task(db, task, "AI_INTERRUPTED")
     db.flush()
 
 
@@ -99,6 +110,7 @@ def call_view(call):
     return {
         "call_id": str(call.id),
         "config_id": str(call.config_id),
+        "purpose": call.purpose,
         "status": call.status,
         "ok": call.status == "SUCCEEDED",
         "error_code": call.error_code,
@@ -282,12 +294,30 @@ def process_model_call(db, settings):
     usage = daily_usage(db, enterprise.id, candidate.usage_date)
     usage.reserved -= 1
     error = None
+    task, snapshot_data, task_fence = None, None, None
+    if candidate.task_id:
+        from app.ai_tasks import authorized_actor, digest, fail_task, snapshot_view
+        from app.models import AiTask, InputSnapshot
+
+        task = db.scalar(
+            select(AiTask)
+            .where(AiTask.id == candidate.task_id)
+            .execution_options(populate_existing=True)
+        )
+        snapshot = db.scalar(select(InputSnapshot).where(InputSnapshot.task_id == task.id))
+        snapshot_data = snapshot_view(snapshot)
+        if task.status != "RUNNING" or not authorized_actor(db, task):
+            error = "AI_PERMISSION_OR_STATE_REVOKED"
+        elif task.lease_until <= now:
+            error = "AI_INTERRUPTED"
+        elif digest(snapshot_data) != snapshot.sha256:
+            error = "AI_SNAPSHOT_INVALID"
     if (
         not current
         or config.revoked_at
         or current.revoked_at
         or actor.status != "ACTIVE"
-        or actor.role != "ADMIN"
+        or (actor.role != "ADMIN" and task is None)
         or actor.must_change_password
         or actor.enterprise_id != enterprise.id
     ):
@@ -302,6 +332,8 @@ def process_model_call(db, settings):
         error = exc.code
     if error:
         candidate.status, candidate.error_code, candidate.finished_at = "RELEASED", error, now
+        if task:
+            fail_task(db, task, error)
         db.commit()
         return True
     today.consumed += 1
@@ -309,13 +341,32 @@ def process_model_call(db, settings):
     candidate.status, candidate.started_at = "STARTED", now
     candidate.fence_token += 1
     candidate.deadline_at = now + timedelta(seconds=config.timeout_seconds + 10)
+    if task:
+        task.started_at = now
+        task.deadline_at = now + timedelta(seconds=config.timeout_seconds + 5)
+        candidate.deadline_at = task.deadline_at
+        task_fence = task.fence_token
     call_id, enterprise_id, fence = candidate.id, enterprise.id, candidate.fence_token
     # 脱离 Session 使用冻结配置；commit 后网络阶段不持有行锁或连接。
     db.expunge(config)
     db.commit()
     outcome, error = None, None
     try:
-        outcome = asyncio.run(probe(config, secret, settings.allowed_model_hosts))
+        if task:
+            outcome = asyncio.run(
+                run_generation(
+                    db.get_bind(),
+                    task.id,
+                    enterprise_id,
+                    task_fence,
+                    config,
+                    secret,
+                    settings,
+                    snapshot_data,
+                )
+            )
+        else:
+            outcome = asyncio.run(probe(config, secret, settings.allowed_model_hosts))
     except AppError as exc:
         error = exc.code
     except Exception:
@@ -340,5 +391,50 @@ def process_model_call(db, settings):
         call.error_code, call.finished_at = error, utcnow()
         if outcome:
             call.latency_ms, call.usage_tokens = outcome.latency_ms, outcome.usage_tokens
+    if call.task_id:
+        from app.ai_tasks import finish_task
+
+        finish_task(db, call, outcome, task_fence)
     db.commit()
     return True
+
+
+def renew_task(bind, task_id, enterprise_id, fence):
+    """独立短事务续租；取消或围栏变化时返回False，HTTP等待不持有此连接。"""
+    from app.models import AiTask
+
+    with Session(bind) as db:
+        lock_enterprise(db, enterprise_id)
+        task = db.get(AiTask, task_id)
+        now = utcnow()
+        if (
+            task.status != "RUNNING"
+            or task.fence_token != fence
+            or task.lease_until <= now
+            or task.deadline_at <= now
+        ):
+            db.rollback()
+            return False
+        task.lease_until = now + timedelta(seconds=30)
+        db.commit()
+        return True
+
+
+async def run_generation(bind, task_id, enterprise_id, fence, config, secret, settings, snapshot):
+    """模型请求与10秒心跳并行；取消/失租时尽力关闭HTTP，调用不自动重发。"""
+    from app.product_generator import generate
+
+    generation = asyncio.create_task(
+        generate(config, secret, settings.allowed_model_hosts, snapshot)
+    )
+    try:
+        while True:
+            done, _ = await asyncio.wait({generation}, timeout=10)
+            if done:
+                return await generation
+            if not await asyncio.to_thread(renew_task, bind, task_id, enterprise_id, fence):
+                raise AppError(409, "AI_INTERRUPTED", "任务已取消或执行租约失效")
+    finally:
+        if not generation.done():
+            generation.cancel()
+        await asyncio.gather(generation, return_exceptions=True)

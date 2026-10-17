@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 from test_identity import ORIGIN, PASSWORD, sign_in
 from test_model_settings import body, configure_app
@@ -26,10 +26,14 @@ from app.core.security import hasher
 from app.main import create_app
 from app.model_provider import ProbeResult
 from app.models import (
+    AiTask,
+    Artifact,
+    ArtifactVersion,
     AuditEvent,
     AuthSession,
     DailyCallUsage,
     Enterprise,
+    InputSnapshot,
     ModelCall,
     ModelConfig,
     SchedulerState,
@@ -77,6 +81,19 @@ def isolated():
             with Session(engine) as db:
                 db.execute(delete(AuditEvent).where(AuditEvent.enterprise_id == eid))
                 db.execute(delete(ModelCall).where(ModelCall.enterprise_id == eid))
+                artifact_ids = select(Artifact.id).where(Artifact.enterprise_id == eid)
+                db.execute(
+                    delete(ArtifactVersion).where(ArtifactVersion.artifact_id.in_(artifact_ids))
+                )
+                db.execute(delete(Artifact).where(Artifact.enterprise_id == eid))
+                task_ids = select(AiTask.id).where(AiTask.enterprise_id == eid)
+                db.execute(delete(InputSnapshot).where(InputSnapshot.task_id.in_(task_ids)))
+                db.execute(
+                    update(AiTask)
+                    .where(AiTask.enterprise_id == eid)
+                    .values(root_task_id=None, parent_task_id=None)
+                )
+                db.execute(delete(AiTask).where(AiTask.enterprise_id == eid))
                 db.execute(delete(DailyCallUsage).where(DailyCallUsage.enterprise_id == eid))
                 db.execute(delete(SchedulerState).where(SchedulerState.enterprise_id == eid))
                 db.get(Enterprise, eid).active_model_config_id = None

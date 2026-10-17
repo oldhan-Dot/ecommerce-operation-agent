@@ -74,8 +74,8 @@ def parse_probe(raw: bytes) -> dict[str, int]:
         raise AppError(502, "MODEL_INVALID_RESPONSE", "模型返回内容无效或为空") from None
 
 
-async def probe(config, secret: str, allowed_hosts: list[str]) -> ProbeResult:
-    """最多发送一次无业务数据的探测；无代理、重定向或重试，总超时包含 DNS。"""
+async def completion(config, secret, allowed_hosts, *, messages, max_tokens, json_mode=False):
+    """共享单次请求传输；无代理、重定向或重试，总超时包含 DNS。"""
     try:
         endpoint = ModelSettingsInput.endpoint_format(config.endpoint)
     except ValueError:
@@ -97,9 +97,10 @@ async def probe(config, secret: str, allowed_hosts: list[str]) -> ProbeResult:
                 body = json.dumps(
                     {
                         "model": config.model_name,
-                        "messages": [{"role": "user", "content": "Reply only with OK."}],
-                        "max_tokens": 16,
+                        "messages": messages,
+                        "max_tokens": max_tokens,
                         "stream": False,
+                        **({"response_format": {"type": "json_object"}} if json_mode else {}),
                     }
                 ).encode()
                 async with pool.stream(
@@ -129,9 +130,20 @@ async def probe(config, secret: str, allowed_hosts: list[str]) -> ProbeResult:
                         if len(raw) + len(chunk) > MAX_RESPONSE_BYTES:
                             raise AppError(502, "MODEL_RESPONSE_TOO_LARGE", "模型响应超过大小限制")
                         raw.extend(chunk)
-                    usage = parse_probe(bytes(raw))
-            return ProbeResult(round((time.monotonic() - started) * 1000), usage)
+            return bytes(raw), round((time.monotonic() - started) * 1000)
     except (TimeoutError, httpcore.TimeoutException):
         raise AppError(504, "MODEL_TIMEOUT", "模型请求超时，请稍后查看调用记录") from None
     except (OSError, httpcore.NetworkError, httpcore.ProtocolError):
         raise AppError(502, "MODEL_PROVIDER_ERROR", "模型服务连接失败，请核对网络和配置") from None
+
+
+async def probe(config, secret: str, allowed_hosts: list[str]) -> ProbeResult:
+    """连接测试只发送固定文字，返回计数而不保留供应商正文。"""
+    raw, latency = await completion(
+        config,
+        secret,
+        allowed_hosts,
+        messages=[{"role": "user", "content": "Reply only with OK."}],
+        max_tokens=16,
+    )
+    return ProbeResult(latency, parse_probe(raw))
