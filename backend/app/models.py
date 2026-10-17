@@ -8,6 +8,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Computed,
     Date,
     DateTime,
     ForeignKey,
@@ -213,6 +214,70 @@ class AdDaily(Record, Base):
     clicks: Mapped[int] = mapped_column(BigInteger)
     attributed_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     attribution_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class ImportBatch(Record, Base):
+    __tablename__ = "import_batches"
+    __table_args__ = (
+        Index("ix_import_queue", "status", "created_at", "id"),
+        UniqueConstraint("creator_id", "confirm_key", name="uq_import_confirm"),
+    )
+    enterprise_id: Mapped[int] = mapped_column(ForeignKey("enterprises.id", ondelete="RESTRICT"))
+    creator_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    store_id: Mapped[int | None] = mapped_column(
+        ForeignKey("stores.id", ondelete="RESTRICT"), nullable=True
+    )
+    import_type: Mapped[str] = mapped_column(String(32))
+    file_sha256: Mapped[bytes] = mapped_column(BINARY(32))
+    file_path: Mapped[str] = mapped_column(String(512))
+    status: Mapped[str] = mapped_column(String(32), default="UPLOADED")
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    new_count: Mapped[int] = mapped_column(Integer, default=0)
+    overwrite_count: Mapped[int] = mapped_column(Integer, default=0)
+    error_count: Mapped[int] = mapped_column(Integer, default=0)
+    preview_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    preview_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    overwrite_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    confirm_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+
+class ImportRow(Base):
+    __tablename__ = "import_rows"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "row_no", name="uq_import_row"),
+        UniqueConstraint("batch_id", "valid_business_key", name="uq_import_valid_key"),
+    )
+    id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("import_batches.id", ondelete="RESTRICT"))
+    row_no: Mapped[int] = mapped_column(Integer)
+    business_key: Mapped[str] = mapped_column(String(256, collation="utf8mb4_bin"))
+    normalized_payload: Mapped[dict] = mapped_column(JSON)
+    before_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    expected_target_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    errors: Mapped[list] = mapped_column(JSON)
+    warnings: Mapped[list] = mapped_column(JSON)
+    error_count: Mapped[int] = mapped_column(Integer)
+    action: Mapped[str] = mapped_column(String(16))
+    valid_business_key: Mapped[str | None] = mapped_column(
+        String(256, collation="utf8mb4_bin"),
+        Computed("CASE WHEN error_count=0 THEN business_key ELSE NULL END", persisted=True),
+    )
+
+
+class ImportDependency(Base):
+    __tablename__ = "import_dependencies"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "entity_type", "entity_id", name="uq_import_dependency"),
+    )
+    id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("import_batches.id", ondelete="RESTRICT"))
+    entity_type: Mapped[str] = mapped_column(String(32))
+    entity_id: Mapped[int] = mapped_column(ID)
+    expected_version: Mapped[int] = mapped_column(Integer)
 
 
 class AuthSession(Record, Base):

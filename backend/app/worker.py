@@ -1,12 +1,16 @@
-"""独立 Worker 入口：当前仅检查环境，尚未实现 AI 业务任务执行。"""
+"""独立 Worker：数据库环境检查及持久 CSV 预检，尚不处理 AI 任务。"""
 
 import json
 import signal
 import threading
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
 from app.core.config import get_settings
 from app.core.db import DatabaseProbe
+from app.imports import process_next_import
 
 
 def main() -> None:
@@ -17,7 +21,7 @@ def main() -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stopped.set())
     previous = None
-    print(json.dumps({"event": "worker_started", "mode": "environment_probe_only"}), flush=True)
+    print(json.dumps({"event": "worker_started", "mode": "import_preview"}), flush=True)
     try:
         while not stopped.is_set():
             result = probe.check()
@@ -30,12 +34,19 @@ def main() -> None:
                             "time": datetime.now(UTC).isoformat(),
                             "code": result.code,
                             "ready": result.ready,
-                            "mode": "environment_probe_only",
+                            "mode": "import_preview",
                         }
                     ),
                     flush=True,
                 )
                 previous = result.code
+            if result.ready:
+                try:
+                    with Session(probe.engine, expire_on_commit=False) as db:
+                        if process_next_import(db, settings):
+                            continue
+                except SQLAlchemyError:
+                    print(json.dumps({"event": "import_preview_database_unavailable"}), flush=True)
             stopped.wait(settings.worker_poll_seconds)
     finally:
         probe.close()
