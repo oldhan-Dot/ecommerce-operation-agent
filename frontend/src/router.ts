@@ -52,6 +52,11 @@ export const router = createRouter({
           meta: { title: '投放日经营' },
         },
         {
+          path: 'imports',
+          component: () => import('./views/ImportsView.vue'),
+          meta: { title: 'CSV 导入预检' },
+        },
+        {
           path: 'password',
           component: () => import('./views/PasswordView.vue'),
           meta: { title: '修改密码' },

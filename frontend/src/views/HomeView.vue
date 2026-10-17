@@ -46,7 +46,7 @@ onMounted(async () => {
       管理、竞品资料、三类日经营数据、角色权限、店铺授权与操作审计。
     </p>
     <el-alert
-      title="CSV 导入和经营指标仍在后续 M1 开发范围内，当前不展示模拟经营结果。"
+      title="CSV 模板与预检已开放；确认入库和经营看板仍在后续 M1 开发范围内。"
       type="info"
       :closable="false"
     />
