@@ -120,11 +120,18 @@ def read_csv(raw: bytes, kind: str):
         raise CsvFormatError("CSV 引号或字段格式错误，请检查文件格式") from exc
 
 
-def preview(db, batch, store, raw):
+def preview(db, batch, store, raw, *, lock=False):
     """批量读取目标和引用，避免万行 CSV 对云数据库逐行查询。"""
     kind = batch.import_type
     source = read_csv(raw, kind)
     dependencies = {}
+
+    def records(model, condition):
+        query = select(model).where(condition).order_by(model.id)
+        if lock:
+            # 确认和入库使用当前读，避免 MySQL REPEATABLE READ 的旧快照漏掉新增键。
+            query = query.with_for_update().execution_options(populate_existing=True)
+        return db.scalars(query)
 
     def depend(item):
         if item is not None:
@@ -132,18 +139,13 @@ def preview(db, batch, store, raw):
 
     depend(store)
     if kind == "stores":
-        stores = {
-            s.code: s
-            for s in db.scalars(select(Store).where(Store.enterprise_id == batch.enterprise_id))
-        }
+        stores = {s.code: s for s in records(Store, Store.enterprise_id == batch.enterprise_id)}
         products, skus, targets = {}, {}, {}
     else:
         stores = {}
-        products = {
-            p.code: p for p in db.scalars(select(Product).where(Product.store_id == store.id))
-        }
+        products = {p.code: p for p in records(Product, Product.store_id == store.id)}
         skus = (
-            {s.code: s for s in db.scalars(select(Sku).where(Sku.store_id == store.id))}
+            {s.code: s for s in records(Sku, Sku.store_id == store.id)}
             if kind == "products"
             else {}
         )
@@ -155,7 +157,7 @@ def preview(db, batch, store, raw):
         }.get(kind)
         targets = {}
         if model:
-            for item in db.scalars(select(model).where(model.store_id == store.id)):
+            for item in records(model, model.store_id == store.id):
                 if kind == "competitors":
                     key = item.code
                 elif kind == "store":
@@ -294,7 +296,16 @@ def preview(db, batch, store, raw):
                 row.errors.append(
                     {"field": "业务键", "message": "文件内业务键重复，所有重复行均须修正"}
                 )
-    for group in product_groups.values():
+    for code, group in product_groups.items():
+        existing_codes = {
+            s.code
+            for s in skus.values()
+            if products.get(code) and s.product_id == products[code].id
+        }
+        supplied_codes = {r.payload["skus"][0]["code"] for r in group if r.payload}
+        if len(existing_codes | supplied_codes) > 100:
+            for row in group:
+                row.errors.append({"field": "SKU", "message": "合并后单商品 SKU 不能超过 100 个"})
         signatures = {
             json.dumps({k: v for k, v in row.payload.items() if k != "skus"}, sort_keys=True)
             for row in group

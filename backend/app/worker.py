@@ -1,4 +1,4 @@
-"""独立 Worker：数据库环境检查及持久 CSV 预检，尚不处理 AI 任务。"""
+"""独立 Worker：数据库环境检查、持久 CSV 预检和确认入库，尚不处理 AI 任务。"""
 
 import json
 import signal
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.db import DatabaseProbe
+from app.import_execution import process_next_confirmation
 from app.imports import process_next_import
 
 
@@ -21,7 +22,7 @@ def main() -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stopped.set())
     previous = None
-    print(json.dumps({"event": "worker_started", "mode": "import_preview"}), flush=True)
+    print(json.dumps({"event": "worker_started", "mode": "csv_import"}), flush=True)
     try:
         while not stopped.is_set():
             result = probe.check()
@@ -34,7 +35,7 @@ def main() -> None:
                             "time": datetime.now(UTC).isoformat(),
                             "code": result.code,
                             "ready": result.ready,
-                            "mode": "import_preview",
+                            "mode": "csv_import",
                         }
                     ),
                     flush=True,
@@ -43,10 +44,12 @@ def main() -> None:
             if result.ready:
                 try:
                     with Session(probe.engine, expire_on_commit=False) as db:
-                        if process_next_import(db, settings):
+                        if process_next_confirmation(db, settings) or process_next_import(
+                            db, settings
+                        ):
                             continue
                 except SQLAlchemyError:
-                    print(json.dumps({"event": "import_preview_database_unavailable"}), flush=True)
+                    print(json.dumps({"event": "csv_import_database_unavailable"}), flush=True)
             stopped.wait(settings.worker_poll_seconds)
     finally:
         probe.close()

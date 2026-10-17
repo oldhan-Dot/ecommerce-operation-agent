@@ -1,4 +1,4 @@
-"""CSV 模板、持久预检批次与分页错误；本阶段不提供确认入库接口。"""
+"""CSV 模板、持久预检、幂等确认与分页错误。"""
 
 import csv
 import hashlib
@@ -7,9 +7,11 @@ import secrets
 from datetime import timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, UploadFile
 from fastapi.responses import Response
+from pydantic import Field
 from sqlalchemy import delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.catalog import writable_store
@@ -17,8 +19,10 @@ from app.core.errors import AppError
 from app.csv_preview import MAX_BYTES, TEMPLATES, CsvFormatError, preview
 from app.dependencies import Principal, current_user, get_db, store_scope
 from app.identity import audit, result, stamp
+from app.import_execution import lock_scope, revalidate, stale
 from app.import_storage import read_upload, upload_path, upload_root
 from app.models import AuditEvent, ImportBatch, ImportDependency, ImportRow, Store, User, utcnow
+from app.schemas import Input
 
 ImportType = Literal["stores", "products", "competitors", "store", "product", "ad"]
 router = APIRouter(prefix="/api/v1", tags=["imports"])
@@ -75,7 +79,8 @@ def batch_view(batch):
         "error_message": batch.error_message,
         "created_at": stamp(batch.created_at),
         "preview_expires_at": stamp(batch.preview_expires_at),
-        "can_confirm": False,
+        "can_confirm": batch.status == "PREVIEWED"
+        and bool(batch.preview_expires_at and batch.preview_expires_at > utcnow()),
     }
 
 
@@ -182,6 +187,8 @@ def detail(
         request,
         {
             **batch_view(batch),
+            "can_confirm": batch.creator_id == p.user.id and batch_view(batch)["can_confirm"],
+            "preview_token": batch.preview_token if batch.creator_id == p.user.id else None,
             "page": page,
             "page_size": 20,
             "rows": [
@@ -198,6 +205,71 @@ def detail(
             ],
         },
     )
+
+
+class ConfirmImport(Input):
+    preview_token: str = Field(pattern=r"^[a-f0-9]{64}$")
+    allow_overwrite: bool = Field(strict=True)
+
+
+@router.post("/imports/{batch_id}/confirm", status_code=202)
+def confirm_import(
+    batch_id: int,
+    body: ConfirmImport,
+    request: Request,
+    idempotency_key: str = Header(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"),
+    p=Depends(current_user),
+    db=Depends(get_db),
+):
+    """仅上传者可确认；相同键重试返回现状，异键或异请求不触发第二次入库。"""
+    batch = visible_batch(db, p, batch_id)
+    if batch.creator_id != p.user.id:
+        raise AppError(403, "AUTH_FORBIDDEN", "请由上传者核对并确认此批次")
+    store = lock_scope(db, batch, p)
+    batch = db.scalar(
+        select(ImportBatch)
+        .where(ImportBatch.id == batch_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if batch.confirm_key:
+        if (
+            batch.confirm_key != idempotency_key
+            or batch.preview_token != body.preview_token
+            or batch.overwrite_confirmed != body.allow_overwrite
+        ):
+            raise AppError(409, "IMPORT_CONFIRM_CONFLICT", "批次已确认，不能更换确认请求")
+        return result(request, batch_view(batch))
+    if (
+        batch.status != "PREVIEWED"
+        or not batch.preview_token
+        or not secrets.compare_digest(batch.preview_token, body.preview_token)
+        or not batch.preview_expires_at
+        or batch.preview_expires_at <= utcnow()
+    ):
+        raise stale()
+    if batch.overwrite_count and not body.allow_overwrite:
+        raise AppError(409, "IMPORT_OVERWRITE_REQUIRED", "请明确勾选允许覆盖已有记录")
+    revalidate(db, batch, store, request.app.state.settings)
+    batch.confirm_key = idempotency_key
+    batch.overwrite_confirmed = body.allow_overwrite
+    batch.status = "IMPORTING"
+    audit(
+        db,
+        request,
+        p.user,
+        "IMPORT_CONFIRMED",
+        batch,
+        changes={"allow_overwrite": body.allow_overwrite},
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise AppError(
+            409, "IMPORT_CONFIRM_CONFLICT", "此幂等键已用于其他批次，请使用新的确认键"
+        ) from exc
+    return result(request, batch_view(batch))
 
 
 def csv_safe(value):

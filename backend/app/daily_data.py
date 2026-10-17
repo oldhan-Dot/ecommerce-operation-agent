@@ -75,6 +75,7 @@ def daily_view(item):
     """金额和计数均使用字符串，避免浏览器大整数丢失精度；缺日不生成记录。"""
     return {
         "id": str(item.id),
+        "batch_id": str(item.batch_id) if item.batch_id else None,
         "store_id": str(item.store_id),
         "business_date": item.business_date.isoformat(),
         "paid_amount": format(item.paid_amount, ".2f"),

@@ -46,6 +46,7 @@ def ad_view(item):
     """只返回渠道事实及异常提示，不把多渠道归因相加冒充去重成交。"""
     return {
         "id": str(item.id),
+        "batch_id": str(item.batch_id) if item.batch_id else None,
         "store_id": str(item.store_id),
         "channel": item.channel,
         "business_date": item.business_date.isoformat(),

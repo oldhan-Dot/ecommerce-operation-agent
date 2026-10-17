@@ -16,6 +16,7 @@ interface Batch {
   error_message: string | null
   created_at: string
   preview_expires_at: string | null
+  can_confirm: boolean
 }
 interface PreviewRow {
   row_no: number
@@ -27,6 +28,7 @@ interface PreviewRow {
   warnings: string[]
 }
 interface Detail extends Batch {
+  preview_token: string | null
   rows: PreviewRow[]
   page: number
   page_size: number
@@ -48,7 +50,9 @@ const statuses: Record<string, string> = {
   VALIDATING: '预检中',
   PREVIEWED: '预检通过',
   INVALID: '数据有误',
-  FAILED: '预检失败',
+  FAILED: '处理失败',
+  IMPORTING: '入库中',
+  SUCCEEDED: '入库成功',
 }
 const actions: Record<string, string> = { NEW: '新增', OVERWRITE: '覆盖', ERROR: '错误' }
 const type = ref('store'),
@@ -66,6 +70,10 @@ const loading = ref(false),
   detail = ref<Detail | null>(null),
   rowPage = ref(1)
 const busy = ref(false)
+const confirming = ref(false),
+  allowOverwrite = ref(false)
+// 网络失败后保留原请求键和覆盖选项，重试仍是同一次确认。
+const confirmations = new Map<string, { key: string; overwrite: boolean; token: string }>()
 let timer: ReturnType<typeof setInterval> | undefined
 let alive = true
 const typeName = (value: string) => templates.find((t) => t.value === value)?.label ?? value
@@ -97,7 +105,10 @@ async function refresh() {
 async function show(batch?: Batch) {
   const id = batch?.id ?? detail.value?.id
   if (!id) return
-  if (batch) rowPage.value = 1
+  if (batch) {
+    rowPage.value = 1
+    allowOverwrite.value = confirmations.get(batch.id)?.overwrite ?? false
+  }
   try {
     const data = await api<Detail>(`/imports/${id}?page=${rowPage.value}`)
     if (alive && (batch || opened.value)) {
@@ -123,6 +134,42 @@ async function downloadErrors() {
     await downloadFile(`/imports/${detail.value.id}/errors`, `import-${detail.value.id}-errors.csv`)
   } catch (e) {
     ElMessage.error(errorMessage(e))
+  }
+}
+/** 确认请求只在用户点击时发出；轮询只查询状态，不自动重复提交。 */
+async function confirmImport() {
+  const batch = detail.value
+  if (!batch?.preview_token || confirming.value) return
+  confirming.value = true
+  try {
+    await ElMessageBox.confirm(
+      `即将提交 ${batch.row_count} 行数据，其中 ${batch.overwrite_count} 行覆盖已有记录。确认入库？`,
+      '确认整批入库',
+      { type: 'warning' },
+    ).catch(() => {
+      throw new Error('cancelled')
+    })
+    let attempt = confirmations.get(batch.id)
+    if (!attempt) {
+      attempt = {
+        key: crypto.randomUUID(),
+        overwrite: allowOverwrite.value,
+        token: batch.preview_token,
+      }
+      confirmations.set(batch.id, attempt)
+    }
+    await api<Batch>(`/imports/${batch.id}/confirm`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': attempt.key },
+      body: JSON.stringify({ preview_token: attempt.token, allow_overwrite: attempt.overwrite }),
+    })
+    ElMessage.success('已提交入库任务，请查看最终处理结果')
+    await show()
+    await refresh()
+  } catch (e) {
+    if (!(e instanceof Error && e.message === 'cancelled')) ElMessage.error(errorMessage(e))
+  } finally {
+    confirming.value = false
   }
 }
 /** 同文件先提示；只有用户明确确认后，才以 allow_duplicate 再次创建批次。 */
@@ -188,8 +235,10 @@ onMounted(async () => {
     await refresh()
     timer = setInterval(async () => {
       const running =
-        batches.value.some((b) => ['UPLOADED', 'VALIDATING'].includes(b.status)) ||
-        (opened.value && detail.value && ['UPLOADED', 'VALIDATING'].includes(detail.value.status))
+        batches.value.some((b) => ['UPLOADED', 'VALIDATING', 'IMPORTING'].includes(b.status)) ||
+        (opened.value &&
+          detail.value &&
+          ['UPLOADED', 'VALIDATING', 'IMPORTING'].includes(detail.value.status))
       if (!running || busy.value || !alive) return
       busy.value = true
       try {
@@ -214,13 +263,13 @@ onUnmounted(() => {
 <template>
   <div class="page-heading">
     <div>
-      <h1>CSV 导入预检</h1>
-      <p>下载模板 → 填写 CSV → 上传预检 → 核对新增、覆盖和错误。</p>
+      <h1>CSV 批量导入</h1>
+      <p>下载模板 → 上传预检 → 核对差异 → 确认整批入库。</p>
     </div>
     <el-button @click="refresh">刷新批次</el-button>
   </div>
   <el-alert
-    title="本阶段仅提供模板与预检，不写入业务表；确认入库将在下一步开放。"
+    title="上传预检不写入业务数据；由上传者核对并确认后入库，有错误则整批回滚。"
     type="info"
     :closable="false"
   />
@@ -283,7 +332,7 @@ onUnmounted(() => {
         ><template #default="{ row }"
           ><el-tag
             :type="
-              row.status === 'PREVIEWED'
+              ['PREVIEWED', 'SUCCEEDED'].includes(row.status)
                 ? 'success'
                 : ['INVALID', 'FAILED'].includes(row.status)
                   ? 'danger'
@@ -333,8 +382,16 @@ onUnmounted(() => {
         :closable="false"
       />
       <p v-if="detail.status === 'PREVIEWED'">
-        预检已记录目标及引用版本；该结果不是入库凭证，下一步开放确认入库后仍需复核变化。
+        预检有效期至
+        {{ detail.preview_expires_at }}。确认和执行前都会复核版本；过期或数据变化后须重新上传。
       </p>
+      <el-checkbox
+        v-if="detail.can_confirm && detail.overwrite_count"
+        v-model="allowOverwrite"
+        :disabled="confirming || confirmations.has(detail.id)"
+      >
+        我已核对差异，允许覆盖 {{ detail.overwrite_count }} 行已有记录
+      </el-checkbox>
       <el-table :data="detail.rows" empty-text="暂无预检行；等待 Worker 处理或查看失败提示">
         <el-table-column prop="row_no" label="文件行号" width="95" /><el-table-column
           prop="business_key"
@@ -376,6 +433,13 @@ onUnmounted(() => {
       />
     </template>
     <template #footer
+      ><el-button
+        v-if="detail?.can_confirm"
+        type="primary"
+        :loading="confirming"
+        :disabled="!!detail.overwrite_count && !allowOverwrite"
+        @click="confirmImport"
+        >确认入库</el-button
       ><el-button v-if="detail?.error_count" @click="downloadErrors">下载错误清单</el-button
       ><el-button @click="opened = false">关闭</el-button></template
     >

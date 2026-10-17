@@ -21,6 +21,7 @@ from test_identity import new_store, sign_in
 from test_identity import system as system
 
 from app.csv_preview import MAX_BYTES, TEMPLATES, CsvFormatError, read_csv
+from app.import_execution import process_next_confirmation
 from app.import_storage import upload_path
 from app.imports import csv_safe, fail_import, process_next_import
 from app.models import (
@@ -119,7 +120,7 @@ def process(client, db, settings, batch):
 
 @mysql
 @pytest.mark.parametrize("kind", list(TEMPLATES))
-def test_six_templates_and_preview_never_write_business(upload_system, kind):
+def test_six_templates_preview_readonly_then_import(upload_system, kind):
     client, db, people, settings = upload_system
     headers = sign_in(client, people["admin"])
     store = new_store(client, headers)
@@ -194,10 +195,30 @@ def test_six_templates_and_preview_never_write_business(upload_system, kind):
     assert client.get(f"/api/v1/imports/{batch['id']}").json()["data"]["rows"] == result["rows"]
     assert (
         client.post(f"/api/v1/imports/{batch['id']}/confirm", headers=headers, json={}).status_code
-        == 404
+        == 422
     )
     if kind == "ad":
         assert result["rows"][0]["warnings"]
+    confirmed = client.post(
+        f"/api/v1/imports/{batch['id']}/confirm",
+        headers={**headers, "Idempotency-Key": "six-template-test"},
+        json={"preview_token": result["preview_token"], "allow_overwrite": False},
+    )
+    assert confirmed.status_code == 202, confirmed.text
+    assert process_next_confirmation(db, settings)
+    assert client.get(f"/api/v1/imports/{batch['id']}").json()["data"]["status"] == "SUCCEEDED"
+    after = counts()
+    increments = [0] * len(before)
+    for index in {
+        "stores": [6],
+        "products": [0, 1],
+        "competitors": [2],
+        "store": [3],
+        "product": [4],
+        "ad": [5],
+    }[kind]:
+        increments[index] = 1
+    assert after == [count + increment for count, increment in zip(before, increments, strict=True)]
 
 
 @mysql

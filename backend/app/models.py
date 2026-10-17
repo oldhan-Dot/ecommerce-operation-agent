@@ -161,6 +161,9 @@ class StoreDaily(Record, Base):
     )
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id", ondelete="RESTRICT"))
     business_date: Mapped[date] = mapped_column(Date)
+    batch_id: Mapped[int | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="RESTRICT"), nullable=True
+    )
     paid_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     paid_orders: Mapped[int] = mapped_column(BigInteger)
     visitors: Mapped[int] = mapped_column(BigInteger)
@@ -184,6 +187,9 @@ class ProductDaily(Record, Base):
     store_id: Mapped[int] = mapped_column(ID)
     product_id: Mapped[int] = mapped_column(ID)
     business_date: Mapped[date] = mapped_column(Date)
+    batch_id: Mapped[int | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="RESTRICT"), nullable=True
+    )
     paid_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     paid_orders: Mapped[int] = mapped_column(BigInteger)
     visitors: Mapped[int] = mapped_column(BigInteger)
@@ -209,6 +215,9 @@ class AdDaily(Record, Base):
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id", ondelete="RESTRICT"))
     channel: Mapped[str] = mapped_column(String(64, collation="utf8mb4_bin"))
     business_date: Mapped[date] = mapped_column(Date)
+    batch_id: Mapped[int | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="RESTRICT"), nullable=True
+    )
     spend: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     impressions: Mapped[int] = mapped_column(BigInteger)
     clicks: Mapped[int] = mapped_column(BigInteger)
