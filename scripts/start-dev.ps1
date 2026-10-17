@@ -50,7 +50,7 @@ try {
     ConvertTo-Json -InputObject @($taskStarted) | Set-Content -LiteralPath $taskStatePath -Encoding utf8
     Write-Output 'Frontend: http://127.0.0.1:5173'
     Write-Output 'API docs: http://127.0.0.1:8000/api/docs'
-    Write-Output 'Worker: CSV preview; AI task processing is not implemented.'
+    Write-Output 'Worker: CSV preview, confirmation and retention; AI task processing is not implemented.'
     Write-Output 'Logs: .local/*.log; after editing backend/.env, stop and restart these services.'
 } catch {
     foreach ($taskEntry in $taskStarted) {

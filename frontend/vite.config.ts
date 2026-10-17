@@ -11,6 +11,12 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     // 浏览器统一访问前端同源 /api，由开发服务器转发给 FastAPI。
-    proxy: { '/api': { target: 'http://127.0.0.1:8000', changeOrigin: false } },
+    // 隔离验收可以指定测试 API；默认仍连接本机开发端口。
+    proxy: {
+      '/api': {
+        target: process.env.VITE_API_TARGET ?? 'http://127.0.0.1:8000',
+        changeOrigin: false,
+      },
+    },
   },
 })

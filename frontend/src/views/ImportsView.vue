@@ -17,6 +17,8 @@ interface Batch {
   created_at: string
   preview_expires_at: string | null
   can_confirm: boolean
+  rows_purged_at: string | null
+  file_deleted_at: string | null
 }
 interface PreviewRow {
   row_no: number
@@ -222,6 +224,11 @@ async function upload() {
     uploading.value = false
   }
 }
+async function resumePolling() {
+  if (document.hidden || !alive || busy.value) return
+  await refresh()
+  if (opened.value) await show()
+}
 onMounted(async () => {
   try {
     let current = 1
@@ -239,7 +246,7 @@ onMounted(async () => {
         (opened.value &&
           detail.value &&
           ['UPLOADED', 'VALIDATING', 'IMPORTING'].includes(detail.value.status))
-      if (!running || busy.value || !alive) return
+      if (!running || busy.value || !alive || document.hidden) return
       busy.value = true
       try {
         await load()
@@ -249,7 +256,8 @@ onMounted(async () => {
       } finally {
         busy.value = false
       }
-    }, 3000)
+    }, 5000)
+    document.addEventListener('visibilitychange', resumePolling)
   } catch (e) {
     error.value = errorMessage(e)
   }
@@ -257,6 +265,7 @@ onMounted(async () => {
 onUnmounted(() => {
   alive = false
   if (timer) clearInterval(timer)
+  document.removeEventListener('visibilitychange', resumePolling)
 })
 </script>
 
@@ -370,6 +379,13 @@ onUnmounted(() => {
         数据行统计，商品文件一行对应一个 SKU。
       </p>
       <el-alert
+        v-if="detail.rows_purged_at"
+        title="逐行明细已按保留期清理，批次摘要与已入库数据仍保留。"
+        type="info"
+        :closable="false"
+      />
+      <p v-if="detail.file_deleted_at" class="muted small">原始 CSV 已按 30 天保留策略清理。</p>
+      <el-alert
         v-if="detail.error_message"
         :title="detail.error_message"
         type="error"
@@ -425,6 +441,7 @@ onUnmounted(() => {
         >
       </el-table>
       <el-pagination
+        v-if="!detail.rows_purged_at"
         v-model:current-page="rowPage"
         :total="detail.row_count"
         :page-size="20"
@@ -440,7 +457,8 @@ onUnmounted(() => {
         :disabled="!!detail.overwrite_count && !allowOverwrite"
         @click="confirmImport"
         >确认入库</el-button
-      ><el-button v-if="detail?.error_count" @click="downloadErrors">下载错误清单</el-button
+      ><el-button v-if="detail?.error_count && !detail.rows_purged_at" @click="downloadErrors"
+        >下载错误清单</el-button
       ><el-button @click="opened = false">关闭</el-button></template
     >
   </el-dialog>

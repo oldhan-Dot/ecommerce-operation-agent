@@ -109,6 +109,16 @@ code {
   margin-bottom: 5px;
   font-size: 13px;
 }
+.sidebar nav {
+  min-height: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+.sidebar .logo,
+.sidebar .nav-caption,
+.sidebar-bottom {
+  flex-shrink: 0;
+}
 .sidebar nav a:hover,
 .sidebar nav a.selected {
   color: #fff;
