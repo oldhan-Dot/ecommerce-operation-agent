@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { api, errorMessage } from '../api'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { api, ApiError, errorMessage } from '../api'
 
 interface ModelConfiguration {
   configured: boolean
@@ -13,7 +13,7 @@ interface ModelConfiguration {
   secret_masked: string | null
   timeout_seconds: number
   daily_limit: number | null
-  connection_status: 'UNTESTED'
+  connection_status: string
 }
 const saved = ref<ModelConfiguration | null>(null),
   loading = ref(false),
@@ -25,6 +25,118 @@ const modelName = ref('deepseek-flash'),
   endpoint = ref('https://api.deepseek.com')
 const timeout = ref(120),
   dailyLimit = ref(100)
+interface ModelCall {
+  call_id: string
+  config_id: string
+  status: string
+  error_code: string | null
+  latency_ms: number | null
+  created_at: string
+}
+interface Calls {
+  items: ModelCall[]
+  usage_date: string
+  consumed: number
+  reserved: number
+  daily_limit: number | null
+}
+const calls = ref<Calls | null>(null),
+  testing = ref(false),
+  callsError = ref('')
+const pendingKey = ref(''),
+  pendingVersion = ref(0)
+const activeTest = computed(() =>
+  calls.value?.items.some(
+    (call) => call.config_id === saved.value?.id && ['RESERVED', 'STARTED'].includes(call.status),
+  ),
+)
+const dirty = computed(
+  () =>
+    !!saved.value &&
+    (!!apiKey.value ||
+      modelName.value !== saved.value.model_name ||
+      endpoint.value !== saved.value.endpoint ||
+      timeout.value !== saved.value.timeout_seconds ||
+      dailyLimit.value !== (saved.value.daily_limit ?? 100)),
+)
+const statuses: Record<string, string> = {
+  RESERVED: '等待执行',
+  STARTED: '测试中',
+  SUCCEEDED: '连接成功',
+  FAILED: '连接失败',
+  UNKNOWN: '结果不确定，未自动重试',
+  RELEASED: '未发送，预留已释放',
+}
+let timer: ReturnType<typeof setTimeout> | undefined
+let disposed = false
+
+/** 刷新只查询已有记录；网络失败不自动重新提交付费请求。 */
+async function refreshCalls() {
+  if (disposed) return
+  clearTimeout(timer)
+  try {
+    calls.value = await api<Calls>('/settings/model/calls')
+    callsError.value = ''
+  } catch (e) {
+    callsError.value = errorMessage(e)
+  } finally {
+    if (!disposed) timer = setTimeout(refreshCalls, 3000)
+  }
+}
+
+async function testConnection() {
+  if (
+    !saved.value?.configured ||
+    testing.value ||
+    dirty.value ||
+    (activeTest.value && !pendingKey.value)
+  )
+    return
+  testing.value = true
+  try {
+    if (!pendingKey.value) {
+      await ElMessageBox.confirm(
+        '将测试已保存配置，占用企业每日 1 次调用额度，可能产生模型费用。',
+        '连接测试',
+      )
+      pendingKey.value = crypto.randomUUID()
+      pendingVersion.value = saved.value.config_version
+    }
+    const call = await api<ModelCall>('/settings/model/test', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': pendingKey.value },
+      body: JSON.stringify({ config_version: pendingVersion.value }),
+    })
+    pendingKey.value = ''
+    error.value = ''
+    ElMessage.success(`调用 ${call.call_id}：${statuses[call.status] ?? call.status}`)
+    await refreshCalls()
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') error.value = errorMessage(e)
+    if (
+      e instanceof ApiError &&
+      [
+        'IDEMPOTENCY_CONFLICT',
+        'DATA_VERSION_CONFLICT',
+        'AI_DAILY_LIMIT',
+        'AI_CONCURRENCY_LIMIT',
+        'MODEL_NOT_CONFIGURED',
+        'MODEL_HOST_NOT_ALLOWED',
+        'MODEL_KEY_UNAVAILABLE',
+        'MODEL_ENCRYPTION_NOT_CONFIGURED',
+        'AUTH_FORBIDDEN',
+        'AUTH_CSRF_INVALID',
+        'AUTH_SESSION_EXPIRED',
+      ].includes(e.code)
+    ) {
+      // 明确拒绝且未接收的请求允许修正后使用新键；网络及数据库异常仍保留原键。
+      pendingKey.value = ''
+    }
+    // 请求键在失败时保留；再次点击只查询或接收同一调用，不生成新付费请求。
+  } finally {
+    testing.value = false
+  }
+}
 
 /** 主动重新读取版本时，保留本次未保存的参数及密钥，避免网络冲突丢失填写。 */
 async function load(preserve = false) {
@@ -75,7 +187,14 @@ async function save() {
     saving.value = false
   }
 }
-onMounted(() => load())
+onMounted(() => {
+  load()
+  refreshCalls()
+})
+onUnmounted(() => {
+  disposed = true
+  clearTimeout(timer)
+})
 </script>
 
 <template>
@@ -99,7 +218,11 @@ onMounted(() => load())
       type="info"
       :closable="false"
     />
-    <el-form label-position="top" :disabled="saving || loading || !saved" @submit.prevent="save">
+    <el-form
+      label-position="top"
+      :disabled="saving || loading || testing || !saved"
+      @submit.prevent="save"
+    >
       <el-form-item label="模型服务商"><el-input model-value="DeepSeek" readonly /></el-form-item>
       <el-form-item label="官方服务地址" required
         ><el-input v-model="endpoint" maxlength="2048" placeholder="https://api.deepseek.com"
@@ -144,6 +267,45 @@ onMounted(() => load())
         >
       </div>
     </el-form>
+    <div class="actions">
+      <el-button
+        type="primary"
+        plain
+        :loading="testing"
+        :disabled="
+          !saved?.configured || !calls || dirty || saving || loading || (activeTest && !pendingKey)
+        "
+        @click="testConnection"
+        >{{ pendingKey ? '重试确认同一调用' : '测试已保存配置' }}</el-button
+      >
+    </div>
+    <p v-if="dirty" class="muted small">请先保存本次参数，再测试连接。</p>
+    <p v-if="pendingKey" class="muted small">
+      上次提交未确认，再次点击会复用请求键；也可查看下方记录确认是否已接收。
+    </p>
+  </section>
+  <section class="surface">
+    <h2>连接测试与今日额度</h2>
+    <p v-if="calls">
+      上海自然日 {{ calls.usage_date }} · 已消耗 {{ calls.consumed }} 次 · 已预留
+      {{ calls.reserved }} 次 · 每日上限 {{ calls.daily_limit ?? '未配置' }} 次
+    </p>
+    <p class="muted small">
+      展示最近 20 次记录。失败及结果不确定的已发送调用不退回额度；等待执行需要 Worker 正常运行。
+    </p>
+    <el-alert v-if="callsError" :title="callsError" type="error" :closable="false" />
+    <el-table :data="calls?.items ?? []" empty-text="暂无连接测试">
+      <el-table-column prop="call_id" label="调用编号" width="110" />
+      <el-table-column prop="config_id" label="配置编号" width="110" />
+      <el-table-column label="状态" min-width="190"
+        ><template #default="{ row }">{{
+          statuses[row.status] ?? row.status
+        }}</template></el-table-column
+      >
+      <el-table-column prop="error_code" label="错误代码" min-width="210" />
+      <el-table-column prop="latency_ms" label="耗时（毫秒）" width="130" />
+      <el-table-column prop="created_at" label="创建时间（UTC）" min-width="220" />
+    </el-table>
   </section>
 </template>
 

@@ -199,7 +199,12 @@ def test_config_versions_secret_redaction_and_stale_updates(system):
         ).status_code
         == 409
     )
-    events = db.scalars(select(AuditEvent).where(AuditEvent.action == "MODEL_CONFIG_CREATED")).all()
+    events = db.scalars(
+        select(AuditEvent).where(
+            AuditEvent.action == "MODEL_CONFIG_CREATED",
+            AuditEvent.enterprise_id == active.enterprise_id,
+        )
+    ).all()
     assert len(events) == 2 and all(TEST_SECRET not in str(e.redacted_diff) for e in events)
     assert client.get("/api/v1/settings/model").json()["data"]["config_version"] == 2
     enterprise = db.get(Enterprise, active.enterprise_id)
