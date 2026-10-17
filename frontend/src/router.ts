@@ -13,7 +13,12 @@ export const router = createRouter({
         {
           path: 'ai-tasks',
           component: () => import('./views/AiTasksView.vue'),
-          meta: { title: 'AI 商品分析' },
+          meta: { title: 'AI 工作台' },
+        },
+        {
+          path: 'artifacts',
+          component: () => import('./views/ArtifactsView.vue'),
+          meta: { title: '产出与审核' },
         },
         { path: '', component: () => import('./views/HomeView.vue'), meta: { title: '工作台' } },
         {

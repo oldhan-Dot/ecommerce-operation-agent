@@ -12,7 +12,7 @@ from sqlalchemy.orm import DeclarativeBase
 from app.core.config import BACKEND_DIR, Settings
 
 # 环境就绪检查同时核对迁移版本，避免连接成功却遗漏初始化。
-EXPECTED_REVISION = "0013_ai_tasks"
+EXPECTED_REVISION = "0014_artifact_review"
 
 
 class Base(DeclarativeBase):

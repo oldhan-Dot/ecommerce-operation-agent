@@ -714,6 +714,9 @@ onUnmounted(() => {
         :closable="false"
       />
       <template v-if="selected.draft">
+        <router-link :to="`/artifacts?id=${selected.artifact_id}`"
+          ><el-button type="primary">修订、审核与导出</el-button></router-link
+        >
         <h2>{{ selected.draft.title }}</h2>
         <el-alert
           :title="

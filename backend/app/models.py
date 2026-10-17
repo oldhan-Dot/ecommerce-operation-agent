@@ -198,6 +198,32 @@ class ArtifactVersion(Record, Base):
     title: Mapped[str] = mapped_column(String(200))
     content: Mapped[dict] = mapped_column(JSON)
     review_status: Mapped[str] = mapped_column(String(32), default="DRAFT")
+    submitted_at: Mapped[datetime | None] = mapped_column(PRECISE_TIME, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(PRECISE_TIME, nullable=True)
+    reviewer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    review_comment: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+
+
+class ArtifactAction(Base):
+    __tablename__ = "artifact_actions"
+    id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("artifact_versions.id"))
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    action: Mapped[str] = mapped_column(String(32))
+    request_key: Mapped[str] = mapped_column(String(64, collation="utf8mb4_bin"), unique=True)
+    request_hash: Mapped[bytes] = mapped_column(BINARY(32))
+    response: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(PRECISE_TIME, default=utcnow)
+
+
+class ArtifactReview(Base):
+    __tablename__ = "artifact_reviews"
+    id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("artifact_versions.id"), unique=True)
+    reviewer_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    decision: Mapped[str] = mapped_column(String(16))
+    comment: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(PRECISE_TIME, default=utcnow)
 
 
 class User(Record, Base):

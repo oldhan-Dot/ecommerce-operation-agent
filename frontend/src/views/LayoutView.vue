@@ -28,6 +28,7 @@ async function logout() {
         <router-link to="/stores" active-class="selected">▤　店铺管理</router-link>
         <router-link to="/products" active-class="selected">▧　商品管理</router-link>
         <router-link to="/ai-tasks" active-class="selected">✧　AI 工作台</router-link>
+        <router-link to="/artifacts" active-class="selected">✓　产出与审核</router-link>
         <router-link to="/competitors" active-class="selected">▥　竞品资料</router-link>
         <router-link to="/daily-data/store" active-class="selected">▦　店铺日经营</router-link>
         <router-link to="/daily-data/product" active-class="selected">▧　商品日经营</router-link>
@@ -40,7 +41,7 @@ async function logout() {
         </template>
       </nav>
       <div class="sidebar-bottom">
-        <p>单企业 · 多店铺<br /><small>当前阶段：M2 AI 能力接入</small></p>
+        <p>单企业 · 多店铺<br /><small>AI 生成 · 人工审核</small></p>
         <strong>{{ auth.user?.login_name }}</strong
         ><small>{{ auth.user ? roles[auth.user.role] : '' }}</small>
       </div>
