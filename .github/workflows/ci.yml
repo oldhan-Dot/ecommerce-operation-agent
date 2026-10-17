@@ -1,0 +1,85 @@
+name: 验证
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-only
+          MYSQL_DATABASE: eoa_test_ci
+          MYSQL_USER: eoa_test
+          MYSQL_PASSWORD: ci-app-only
+        ports: ['13306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s --health-timeout=5s --health-retries=15
+    env:
+      APP_ENV: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: '13306'
+      DB_NAME: eoa_test_ci
+      DB_USER: eoa_test
+      DB_PASSWORD: ci-app-only
+      DB_TLS_MODE: LOCAL
+      SESSION_PEPPER: ci-only-session-pepper-not-a-production-secret
+      RUN_MYSQL_TESTS: '1'
+      UPLOAD_DIR: /tmp/eoa-ci-uploads
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.7'
+          enable-cache: true
+      - run: uv sync --frozen --python 3.12
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run alembic upgrade head
+      - run: uv run alembic check
+      - run: uv run pytest -q --junitxml=test-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-test-results
+          path: backend/test-results.xml
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx prettier --check src
+      - run: npm run build
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t eoa-api:ci backend
+      - run: docker build -t eoa-web:ci frontend
+      - run: docker network create eoa-ci
+      - run: docker run -d --name api --network eoa-ci -e APP_ENV=test eoa-api:ci
+      - run: docker run -d --name web --network eoa-ci -p 127.0.0.1:18080:80 eoa-web:ci
+      - run: curl --fail --retry 10 --retry-delay 2 --retry-all-errors http://127.0.0.1:18080/api/v1/health/live
+      - run: curl --fail http://127.0.0.1:18080/artifacts
+      - name: 清理本次临时容器
+        if: always()
+        run: docker rm -f web api
