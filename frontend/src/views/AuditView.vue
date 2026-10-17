@@ -22,6 +22,18 @@ const requestId = ref(''),
   targetType = ref(''),
   targetId = ref('')
 const labels: Record<string, string> = {
+  AI_TASK_CREATED: '创建AI任务',
+  AI_TASK_SUCCEEDED: 'AI生成成功',
+  AI_TASK_FAILED: 'AI任务失败',
+  AI_TASK_CANCELLED: '取消AI任务',
+  AI_TASK_RETRIED: '重试AI任务',
+  ARTIFACT_VERSION_CREATED: '创建产出修订',
+  ARTIFACT_SUBMIT: '提交审核',
+  ARTIFACT_WITHDRAW: '撤回审核',
+  ARTIFACT_REVIEW: '审核产出',
+  ARTIFACT_EXPORTED: '导出产出',
+  OPS_MODEL_FAILURE_RATE: '模型失败率告警',
+  OPS_QUEUE_WAIT: '排队等待告警',
   LOGIN: '登录',
   LOGOUT: '退出',
   LOGIN_FAILED: '登录失败',
@@ -107,9 +119,22 @@ function filter() {
         label="对象 ID"
       /><el-table-column label="结果"
         ><template #default="{ row }"
-          ><el-tag :type="row.result === 'SUCCEEDED' ? 'success' : 'danger'">{{
-            row.result === 'SUCCEEDED' ? '成功' : '失败'
-          }}</el-tag></template
+          ><el-tag
+            :type="
+              ['SUCCEEDED', 'SUCCESS'].includes(row.result)
+                ? 'success'
+                : row.result === 'WARNING'
+                  ? 'warning'
+                  : 'danger'
+            "
+            >{{
+              ['SUCCEEDED', 'SUCCESS'].includes(row.result)
+                ? '成功'
+                : row.result === 'WARNING'
+                  ? '告警'
+                  : '失败'
+            }}</el-tag
+          ></template
         ></el-table-column
       ></el-table
     ><el-pagination

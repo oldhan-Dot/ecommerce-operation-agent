@@ -88,6 +88,15 @@ def main():
         assert tab
         with connect(tab["webSocketDebuggerUrl"], max_size=16 * 1024 * 1024) as socket:
             browser = Browser(socket)
+            browser.call(
+                "Emulation.setDeviceMetricsOverride",
+                {
+                    "width": 1366,
+                    "height": 768,
+                    "deviceScaleFactor": 1,
+                    "mobile": False,
+                },
+            )
 
             def login(name):
                 browser.go("/login")
@@ -134,6 +143,12 @@ def main():
             checks.append("新修订不继承审核结果")
             screen = browser.call("Page.captureScreenshot", {"format": "png"})
             (LOCAL / "artifact-review-page.png").write_bytes(base64.b64decode(screen["data"]))
+            browser.go("/operations")
+            browser.wait("document.body.innerText.includes('模型调用')")
+            assert browser.evaluate("document.body.innerText.includes('执行队列')")
+            checks.append("运行监控页使用真实接口加载")
+            screen = browser.call("Page.captureScreenshot", {"format": "png"})
+            (LOCAL / "operations-page.png").write_bytes(base64.b64decode(screen["data"]))
             (LOCAL / "artifact-review-report.json").write_text(
                 json.dumps({"passed": checks}, ensure_ascii=False), encoding="utf-8"
             )

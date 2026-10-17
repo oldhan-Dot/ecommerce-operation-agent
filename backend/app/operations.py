@@ -90,6 +90,7 @@ def evaluate_alerts(db, eid, now):
     lock_enterprise(db, eid)
     data = model_summary(db, eid, now)
     actions = []
+    events = []
     if data["completed"] >= 10 and data["failed"] * 5 >= data["completed"]:
         actions.append("OPS_MODEL_FAILURE_RATE")
     if data["oldest_wait_seconds"] >= 540:
@@ -116,8 +117,10 @@ def evaluate_alerts(db, eid, now):
                     created_at=now,
                 )
             )
-            print(json.dumps({"event": action, "enterprise_id": str(eid), **data}), flush=True)
+            events.append({"event": action, "enterprise_id": str(eid), **data})
     db.commit()
+    for event in events:
+        print(json.dumps(event), flush=True)
 
 
 def watch_worker(engine, stopped, instance):

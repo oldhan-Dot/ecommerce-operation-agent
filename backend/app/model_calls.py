@@ -396,20 +396,16 @@ def process_model_call(db, settings):
         from app.ai_tasks import finish_task
 
         finish_task(db, call, outcome, task_fence)
-    print(
-        json.dumps(
-            {
-                "event": "model_call_completed",
-                "call_id": str(call.id),
-                "task_id": str(call.task_id) if call.task_id else None,
-                "status": call.status,
-                "elapsed_ms": call.latency_ms,
-                "error_code": call.error_code,
-            }
-        ),
-        flush=True,
-    )
+    completion_event = {
+        "event": "model_call_completed",
+        "call_id": str(call.id),
+        "task_id": str(call.task_id) if call.task_id else None,
+        "status": call.status,
+        "elapsed_ms": call.latency_ms,
+        "error_code": call.error_code,
+    }
     db.commit()
+    print(json.dumps(completion_event), flush=True)
     return True
 
 

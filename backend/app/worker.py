@@ -65,7 +65,14 @@ def main() -> None:
                                 counts = cleanup_imports(db, settings)
                                 if any(counts.values()):
                                     print(
-                                        json.dumps({"event": "import_cleanup", **counts}),
+                                        json.dumps(
+                                            {
+                                                "event": "OPS_IMPORT_CLEANUP_FAILED"
+                                                if counts["failed"]
+                                                else "import_cleanup",
+                                                **counts,
+                                            }
+                                        ),
                                         flush=True,
                                     )
                             except SQLAlchemyError:

@@ -463,7 +463,7 @@ def fail_task(db, task, code):
                 actor_id=None,
                 store_id=task.store_id,
                 action="AI_TASK_FAILED",
-                target_type="AiTask",
+                target_type="ai_tasks",
                 target_id=str(task.id),
                 request_id=f"ai-task-{task.id}",
                 result="FAILED",
@@ -538,10 +538,10 @@ def dispatch_task(db, settings):
                 actor_id=None,
                 store_id=candidate.store_id,
                 action="AI_TASK_STARTED",
-                target_type="AiTask",
+                target_type="ai_tasks",
                 target_id=str(candidate.id),
                 request_id=f"ai-task-{candidate.id}",
-                result="SUCCESS",
+                result="SUCCEEDED",
                 redacted_diff={"status": "RUNNING"},
             )
         )
@@ -607,10 +607,10 @@ def finish_task(db, call, outcome, fence):
             actor_id=task.creator_id,
             store_id=task.store_id,
             action="AI_TASK_SUCCEEDED",
-            target_type="AiTask",
+            target_type="ai_tasks",
             target_id=str(task.id),
             request_id=f"ai-task-{task.id}",
-            result="SUCCESS",
+            result="SUCCEEDED",
             redacted_diff={"artifact_id": str(artifact.id)},
         )
     )

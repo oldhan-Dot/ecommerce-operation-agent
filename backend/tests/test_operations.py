@@ -5,16 +5,21 @@
 前置：独立MySQL迁移到head；事务回滚夹具，调用数据为合成记录，不请求真实模型。
 """
 
+import os
+import threading
 from datetime import timedelta
 from uuid import uuid4
 
-from sqlalchemy import func, select
+import pytest
+from sqlalchemy import delete, func, select
+from sqlalchemy.orm import Session
 from test_identity import sign_in
 from test_identity import system as system
+from test_model_call_concurrency import isolated as isolated
 from test_model_calls import configured as configured
 
 from app.models import AuditEvent, Enterprise, ModelCall, ServiceHeartbeat, utcnow
-from app.operations import HttpMetrics, evaluate_alerts
+from app.operations import HttpMetrics, evaluate_alerts, watch_worker
 
 
 def test_http_metrics_bounded_and_p95():
@@ -102,3 +107,39 @@ def test_worker_stale_heartbeat(configured):
         row.seen_at = now - timedelta(seconds=31)
     db.commit()
     assert not client.get("/api/v1/operations/summary").json()["data"]["worker"]["healthy"]
+
+
+@pytest.mark.skipif(os.getenv("RUN_MYSQL_TESTS") != "1", reason="需隔离MySQL")
+def test_monitor_persists_heartbeat_without_running_tasks(isolated, monkeypatch):
+    _, _, engine, _ = isolated
+    stopped = threading.Event()
+    instance = uuid4().hex
+    monkeypatch.setattr(stopped, "wait", lambda seconds: stopped.set())
+    try:
+        watch_worker(engine, stopped, instance)
+        with Session(engine) as db:
+            assert db.get(ServiceHeartbeat, instance).service == "worker"
+    finally:
+        with Session(engine) as db:
+            db.execute(delete(ServiceHeartbeat).where(ServiceHeartbeat.instance_id == instance))
+            db.commit()
+
+
+def test_audit_exact_filters_and_no_secret_in_operations(configured):
+    client, _, _, _ = configured
+    first = client.get("/api/v1/audit-events").json()["data"]["items"][0]
+    response = client.get(
+        "/api/v1/audit-events",
+        params={
+            "request_id": first["request_id"],
+            "action": first["action"],
+            "target_type": first["target_type"],
+            "target_id": first["target_id"],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["items"][0]["id"] == first["id"]
+    assert client.get("/api/v1/audit-events?request_id=not-exists").json()["data"]["total"] == 0
+    text = client.get("/api/v1/operations/summary").text
+    for key in ("secret_cipher", "nonce", "api_key", "demo-deepseek-key-not-real"):
+        assert key not in text

@@ -17,7 +17,7 @@ onMounted(async () => {
   <div class="page-heading">
     <div>
       <h1>工作台</h1>
-      <p>欢迎回来，{{ auth.user?.login_name }}。从维护店铺和团队权限开始。</p>
+      <p>欢迎回来，{{ auth.user?.login_name }}。查看经营表现，生成建议并协作审核。</p>
     </div>
     <router-link to="/stores"><el-button type="primary">进入店铺管理</el-button></router-link>
   </div>
@@ -40,17 +40,19 @@ onMounted(async () => {
     </article>
   </section>
   <section class="surface">
-    <h2>本阶段已开放</h2>
+    <h2>运营工作空间</h2>
     <p>
       账号登录、修改密码、店铺管理、商品及 SKU
-      管理、竞品资料、三类日经营数据、角色权限、店铺授权与操作审计。
+      管理、竞品资料、三类日经营数据、CSV导入、经营概览、六类AI生成、产出修订与人工审核。
     </p>
     <el-alert
-      title="CSV 预检与确认入库、经营概览已开放；可先录入日经营数据，再查看指标与趋势。"
+      title="先维护来源资料与经营数据，再创建AI任务；生成内容由另一名管理员或主管审核后正式导出。"
       type="info"
       :closable="false"
     />
     <div class="actions">
+      <router-link to="/ai-tasks"><el-button type="primary">进入 AI 工作台</el-button></router-link>
+      <router-link to="/artifacts"><el-button>产出与审核</el-button></router-link>
       <router-link to="/dashboard"><el-button type="primary">查看经营概览</el-button></router-link>
       <router-link to="/stores"><el-button>查看店铺</el-button></router-link
       ><router-link v-if="auth.user?.role === 'ADMIN'" to="/users"
