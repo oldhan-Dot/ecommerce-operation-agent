@@ -46,11 +46,12 @@ onMounted(async () => {
       管理、竞品资料、三类日经营数据、角色权限、店铺授权与操作审计。
     </p>
     <el-alert
-      title="CSV 模板与预检已开放；确认入库和经营看板仍在后续 M1 开发范围内。"
+      title="CSV 预检与确认入库、经营概览已开放；可先录入日经营数据，再查看指标与趋势。"
       type="info"
       :closable="false"
     />
     <div class="actions">
+      <router-link to="/dashboard"><el-button type="primary">查看经营概览</el-button></router-link>
       <router-link to="/stores"><el-button>查看店铺</el-button></router-link
       ><router-link v-if="auth.user?.role === 'ADMIN'" to="/users"
         ><el-button>管理团队</el-button></router-link

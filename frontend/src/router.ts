@@ -12,6 +12,11 @@ export const router = createRouter({
       children: [
         { path: '', component: () => import('./views/HomeView.vue'), meta: { title: '工作台' } },
         {
+          path: 'dashboard',
+          component: () => import('./views/DashboardView.vue'),
+          meta: { title: '经营概览' },
+        },
+        {
           path: 'stores',
           component: () => import('./views/StoresView.vue'),
           meta: { title: '店铺管理' },
@@ -54,7 +59,7 @@ export const router = createRouter({
         {
           path: 'imports',
           component: () => import('./views/ImportsView.vue'),
-          meta: { title: 'CSV 导入预检' },
+          meta: { title: 'CSV 批量导入' },
         },
         {
           path: 'password',

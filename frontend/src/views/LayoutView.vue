@@ -24,13 +24,14 @@ async function logout() {
       <span class="nav-caption">工作空间</span>
       <nav v-if="!auth.user?.must_change_password">
         <router-link to="/" exact-active-class="selected">▦　工作台</router-link>
+        <router-link to="/dashboard" active-class="selected">▥　经营概览</router-link>
         <router-link to="/stores" active-class="selected">▤　店铺管理</router-link>
         <router-link to="/products" active-class="selected">▧　商品管理</router-link>
         <router-link to="/competitors" active-class="selected">▥　竞品资料</router-link>
         <router-link to="/daily-data/store" active-class="selected">▦　店铺日经营</router-link>
         <router-link to="/daily-data/product" active-class="selected">▧　商品日经营</router-link>
         <router-link to="/daily-data/ad" active-class="selected">▥　投放日经营</router-link>
-        <router-link to="/imports" active-class="selected">⇧　CSV 导入预检</router-link>
+        <router-link to="/imports" active-class="selected">⇧　CSV 批量导入</router-link>
         <template v-if="auth.user?.role === 'ADMIN'">
           <router-link to="/users" active-class="selected">♙　团队与权限</router-link>
           <router-link to="/audit" active-class="selected">☷　审计日志</router-link>
