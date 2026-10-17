@@ -19,6 +19,7 @@ from app.core.errors import AppError
 from app.daily_data import router as daily_router
 from app.identity import init_rate_limit, router
 from app.imports import router as import_router
+from app.model_settings import router as model_settings_router
 from app.product_daily import router as product_daily_router
 
 
@@ -52,6 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ad_daily_router)
     app.include_router(import_router)
     app.include_router(analytics_router)
+    app.include_router(model_settings_router)
 
     @app.exception_handler(AppError)
     async def business_error(request: Request, exc: AppError):

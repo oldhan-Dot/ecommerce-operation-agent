@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     session_pepper: SecretStr = SecretStr("")
     # 预留同源访问、模型服务白名单、上传目录与 Worker 轮询配置。
     trusted_origins: list[str] = ["http://127.0.0.1:5173", "http://localhost:5173"]
-    allowed_model_hosts: list[str] = []
+    allowed_model_hosts: list[str] = ["api.deepseek.com"]
     upload_dir: str = ".local/uploads"
     worker_poll_seconds: int = Field(default=10, ge=1, le=300)
     import_cleanup_interval_seconds: int = Field(default=3600, ge=60, le=86400)

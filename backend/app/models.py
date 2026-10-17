@@ -15,6 +15,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -44,9 +45,40 @@ class Record:
 
 class Enterprise(Record, Base):
     __tablename__ = "enterprises"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["active_model_config_id", "id"],
+            ["model_configs.id", "model_configs.enterprise_id"],
+            name="fk_enterprise_active_model",
+            use_alter=True,
+            ondelete="RESTRICT",
+        ),
+    )
     name: Mapped[str] = mapped_column(String(100))
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
     currency: Mapped[str] = mapped_column(String(3), default="CNY")
+    active_model_config_id: Mapped[int | None] = mapped_column(ID, nullable=True)
+
+
+class ModelConfig(Record, Base):
+    __tablename__ = "model_configs"
+    __table_args__ = (
+        UniqueConstraint("enterprise_id", "config_version", name="uq_model_config_version"),
+        UniqueConstraint("id", "enterprise_id", name="uq_model_config_enterprise"),
+        CheckConstraint("daily_limit > 0", name="ck_model_daily_limit"),
+        CheckConstraint("timeout_seconds BETWEEN 30 AND 300", name="ck_model_timeout"),
+    )
+    enterprise_id: Mapped[int] = mapped_column(ForeignKey("enterprises.id", ondelete="RESTRICT"))
+    config_version: Mapped[int] = mapped_column(Integer)
+    provider: Mapped[str] = mapped_column(String(64))
+    endpoint: Mapped[str] = mapped_column(String(2048))
+    model_name: Mapped[str] = mapped_column(String(128))
+    secret_cipher: Mapped[bytes] = mapped_column(LargeBinary)
+    key_id: Mapped[str] = mapped_column(String(64))
+    nonce: Mapped[bytes] = mapped_column(BINARY(12))
+    timeout_seconds: Mapped[int] = mapped_column(Integer)
+    daily_limit: Mapped[int] = mapped_column(Integer)
+    revoked_at: Mapped[datetime | None] = mapped_column(PRECISE_TIME, nullable=True)
 
 
 class User(Record, Base):
