@@ -35,10 +35,11 @@ async function logout() {
         <template v-if="auth.user?.role === 'ADMIN'">
           <router-link to="/users" active-class="selected">♙　团队与权限</router-link>
           <router-link to="/audit" active-class="selected">☷　审计日志</router-link>
+          <router-link to="/settings/model" active-class="selected">⚙　模型配置</router-link>
         </template>
       </nav>
       <div class="sidebar-bottom">
-        <p>单企业 · 多店铺<br /><small>当前阶段：M1 数据基础</small></p>
+        <p>单企业 · 多店铺<br /><small>当前阶段：M2 AI 能力接入</small></p>
         <strong>{{ auth.user?.login_name }}</strong
         ><small>{{ auth.user ? roles[auth.user.role] : '' }}</small>
       </div>

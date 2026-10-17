@@ -42,6 +42,11 @@ export const router = createRouter({
           meta: { title: '审计日志', admin: true },
         },
         {
+          path: 'settings/model',
+          component: () => import('./views/ModelSettingsView.vue'),
+          meta: { title: '模型配置', admin: true },
+        },
+        {
           path: 'daily-data/store',
           component: () => import('./views/StoreDailyView.vue'),
           meta: { title: '店铺日经营' },
