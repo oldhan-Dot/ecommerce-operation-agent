@@ -76,3 +76,56 @@ def test_expanded_content_cannot_exceed_limit():
             },
             SNAPSHOT,
         )
+
+
+def test_metric_reference_uses_server_value_and_omits_raw_history(wire):
+    data = {
+        **SNAPSHOT,
+        "prompt_version": "product-analysis-v2",
+        "data_copy": {
+            **SNAPSHOT["data_copy"],
+            "skus": [],
+            "product_daily": [{"internal_raw": "not-for-provider"}],
+        },
+        "metrics": {
+            "analysis_mode": "DATA_SUPPORTED",
+            "values": {
+                "paid_amount": {
+                    "label": "实付金额",
+                    "value": "0.00",
+                    "unit": "money",
+                    "previous_value": None,
+                    "change_percent": None,
+                }
+            },
+        },
+    }
+    wire.body = json.dumps(
+        {
+            "choices": [
+                {
+                    "message": {"content": json.dumps({**OUTPUT, "metric_refs": ["paid_amount"]})},
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+    ).encode()
+    result = asyncio.run(generate(config(), SECRET, ["api.deepseek.com"], data))
+    request = b"".join(wire.requests)
+    assert b"not-for-provider" not in request
+    assert result.content["metric_refs"][0]["value"] == "0.00"
+
+
+def test_historical_prompt_version_remains_profile_only(wire):
+    wire.body = json.dumps({"choices": [{"message": {"content": json.dumps(OUTPUT)}}]}).encode()
+    asyncio.run(
+        generate(
+            config(),
+            SECRET,
+            ["api.deepseek.com"],
+            {**SNAPSHOT, "prompt_version": "product-profile-v1"},
+        )
+    )
+    request = json.loads(b"".join(wire.requests).split(b"\r\n\r\n", 1)[1])
+    assert "没有经营数据" in request["messages"][0]["content"]
+    assert "DATA_SUPPORTED" not in request["messages"][0]["content"]

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, ApiError, errorMessage, type Page, type Store } from '../api'
 
@@ -23,12 +23,32 @@ interface Detail extends Task {
     title: string
     review_status: string
     content: {
+      analysis_mode: string
+      metrics?: {
+        period: { start_date: string; end_date: string }
+        completeness: { recorded_days: number; expected_days: number }
+        values: Record<string, Metric>
+      }
+      sku_facts?: {
+        ref: string
+        spec_name: string
+        price: string
+        cost: string | null
+        gross_margin_percent: string | null
+      }[]
       facts: { text: string; field: string }[]
       hypotheses: { text: string }[]
       recommendations: { text: string }[]
       missing_items: string[]
     }
   } | null
+}
+interface Metric {
+  label: string
+  value: string | null
+  previous_value: string | null
+  change_percent: string | null
+  unit: string
 }
 interface Product {
   id: string
@@ -37,13 +57,21 @@ interface Product {
 interface TaskBody {
   store_id: string
   task_type: 'PRODUCT_ANALYSIS'
-  input: { product_id: string; goal: string }
+  input: { product_id: string; goal: string; start_date?: string; end_date?: string }
 }
 const stores = ref<Store[]>([]),
   products = ref<Product[]>([])
 const storeId = ref(''),
   productId = ref(''),
   goal = ref('')
+const period = ref<[string, string] | null>(null)
+const validPeriod = computed(
+  () =>
+    !period.value ||
+    (period.value.length === 2 &&
+      (Date.parse(period.value[1]) - Date.parse(period.value[0])) / 86400000 >= 0 &&
+      (Date.parse(period.value[1]) - Date.parse(period.value[0])) / 86400000 < 90),
+)
 const error = ref(''),
   listError = ref(''),
   submitting = ref(false),
@@ -53,6 +81,17 @@ const tasks = ref<Task[]>([]),
   page = ref(1)
 const selected = ref<Detail | null>(null),
   drawer = ref(false)
+const metricRows = computed(() =>
+  Object.entries(selected.value?.draft?.content.metrics?.values ?? {}).map(([ref, metric]) => ({
+    ref,
+    ...metric,
+  })),
+)
+function metricText(value: string | null, unit: string) {
+  return value === null
+    ? 'N/A'
+    : `${value}${unit === 'money' ? ' 元' : unit === 'percent' ? '%' : ''}`
+}
 const pending = ref<{ key: string; body: TaskBody } | null>(null)
 const retryKeys = new Map<string, string>()
 const statuses: Record<string, string> = {
@@ -141,7 +180,7 @@ async function open(task: Task) {
   }
 }
 async function create() {
-  if (submitting.value) return
+  if (submitting.value || (!pending.value && !validPeriod.value)) return
   submitting.value = true
   error.value = ''
   try {
@@ -157,6 +196,10 @@ async function create() {
           task_type: 'PRODUCT_ANALYSIS',
           input: { product_id: productId.value, goal: goal.value.trim() },
         },
+      }
+      if (period.value) {
+        pending.value.body.input.start_date = period.value[0]
+        pending.value.body.input.end_date = period.value[1]
       }
     }
     const task = await api<Task>('/ai-tasks', {
@@ -249,7 +292,7 @@ onUnmounted(() => {
   <el-alert v-if="error" :title="error" type="error" :closable="false" />
   <section class="surface narrow">
     <el-alert
-      title="本版仅分析商品资料，未纳入经营数据。生成结果为待人工审核的草稿。"
+      title="可选择最多90天的商品经营数据；不选日期或本期无数据时仅作资料分析。结果均为待审核草稿。"
       type="info"
       :closable="false"
     />
@@ -283,6 +326,17 @@ onUnmounted(() => {
             :label="product.name"
             :value="product.id" /></el-select
       ></el-form-item>
+      <el-form-item label="经营日期（可选，最多90天）">
+        <el-date-picker
+          v-model="period"
+          type="daterange"
+          value-format="YYYY-MM-DD"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+        />
+      </el-form-item>
+      <p v-if="!validPeriod" class="muted small">请选择不超过90天的有效日期区间。</p>
       <el-form-item label="分析目标" required
         ><el-input
           v-model="goal"
@@ -296,7 +350,7 @@ onUnmounted(() => {
         type="primary"
         native-type="submit"
         :loading="submitting"
-        :disabled="!storeId || !productId || !goal.trim()"
+        :disabled="!storeId || !productId || !goal.trim() || !validPeriod"
         >生成资料分析</el-button
       >
     </el-form>
@@ -365,7 +419,11 @@ onUnmounted(() => {
       <template v-if="selected.draft">
         <h2>{{ selected.draft.title }}</h2>
         <el-alert
-          title="草稿 · 尚未审核；资料分析未使用经营数据，待验证判断不代表已证实的经营结论。"
+          :title="
+            selected.draft.content.analysis_mode === 'DATA_SUPPORTED'
+              ? '草稿 · 已引用商品经营数据；不完整周期仅为已录入小计，判断仍需人工核实。'
+              : '草稿 · 仅作资料分析，未使用本期经营数据，不输出销量结论。'
+          "
           type="warning"
           :closable="false"
         />
@@ -373,6 +431,57 @@ onUnmounted(() => {
         <p v-for="fact in selected.draft.content.facts" :key="fact.field">
           {{ fieldNames[fact.field] ?? fact.field }}：{{ fact.text }}
         </p>
+        <template v-if="selected.draft.content.sku_facts?.length">
+          <h3>SKU 资料</h3>
+          <p class="muted small">
+            参考毛利率按录入价格和成本计算，未扣除投放、运费等费用，不代表周期利润率。
+          </p>
+          <el-table :data="selected.draft.content.sku_facts">
+            <el-table-column prop="spec_name" label="规格" min-width="110" />
+            <el-table-column label="价格"
+              ><template #default="{ row }">{{ row.price }} 元</template></el-table-column
+            >
+            <el-table-column label="成本"
+              ><template #default="{ row }">{{
+                metricText(row.cost, 'money')
+              }}</template></el-table-column
+            >
+            <el-table-column label="参考毛利率" min-width="110"
+              ><template #default="{ row }">{{
+                metricText(row.gross_margin_percent, 'percent')
+              }}</template></el-table-column
+            >
+          </el-table>
+        </template>
+        <template v-if="selected.draft.content.metrics?.period">
+          <h3>服务端计算的经营指标</h3>
+          <p>
+            {{ selected.draft.content.metrics.period.start_date }} 至
+            {{ selected.draft.content.metrics.period.end_date }} · 已录入
+            {{ selected.draft.content.metrics.completeness.recorded_days }}/{{
+              selected.draft.content.metrics.completeness.expected_days
+            }}
+            天
+          </p>
+          <el-table :data="metricRows">
+            <el-table-column prop="label" label="指标" min-width="160" />
+            <el-table-column label="本期已录入值" min-width="110"
+              ><template #default="{ row }">{{
+                metricText(row.value, row.unit)
+              }}</template></el-table-column
+            >
+            <el-table-column label="上期已录入值" min-width="110"
+              ><template #default="{ row }">{{
+                metricText(row.previous_value, row.unit)
+              }}</template></el-table-column
+            >
+            <el-table-column label="正式环比" min-width="100"
+              ><template #default="{ row }">{{
+                metricText(row.change_percent, 'percent')
+              }}</template></el-table-column
+            >
+          </el-table>
+        </template>
         <h3>待验证的判断</h3>
         <ul>
           <li v-for="(item, i) in selected.draft.content.hypotheses" :key="i">{{ item.text }}</li>

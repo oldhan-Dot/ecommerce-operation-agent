@@ -3,15 +3,16 @@
 import hashlib
 import json
 import re
-from datetime import timedelta
+from datetime import date, timedelta
 from types import SimpleNamespace
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
-from pydantic import StringConstraints
+from pydantic import StringConstraints, field_validator, model_validator
 from sqlalchemy import func, select
 
 from app.core.errors import AppError
+from app.daily_data import business_today
 from app.dependencies import current_user, get_db, store_scope
 from app.identity import audit, result, stamp
 from app.model_calls import ACTIVE, daily_usage, lock_enterprise, recover_locked, shanghai_date
@@ -30,6 +31,7 @@ from app.models import (
     User,
     utcnow,
 )
+from app.product_snapshot import build_product_snapshot
 from app.schemas import Input
 
 router = APIRouter(prefix="/api/v1", tags=["ai-tasks"])
@@ -39,6 +41,36 @@ Identifier = Annotated[str, StringConstraints(pattern=r"^[1-9][0-9]{0,18}$")]
 class ProductAnalysisInput(Input):
     product_id: Identifier
     goal: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def iso_date(cls, value):
+        if (
+            value is not None
+            and type(value) is not date
+            and (
+                not isinstance(value, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value)
+            )
+        ):
+            raise ValueError("日期须为YYYY-MM-DD格式")
+        return value
+
+    @model_validator(mode="after")
+    def valid_period(self):
+        """日期成对提供，最长90天；允许当日但不将其视作完整日。"""
+        if (self.start_date is None) != (self.end_date is None):
+            raise ValueError("开始和结束日期须同时提供")
+        if self.start_date is not None:
+            length = (self.end_date - self.start_date).days + 1
+            if (
+                not 1 <= length <= 90
+                or self.end_date > business_today()
+                or self.start_date.toordinal() <= length
+            ):
+                raise ValueError("请选择不含未来日期且不超过90天的有效区间")
+        return self
 
 
 class CreateTask(Input):
@@ -189,7 +221,7 @@ def create_task(
     validate_key(idempotency_key)
     enterprise = lock_enterprise(db, p.user.enterprise_id)
     p = live_actor(db, p)
-    request_hash = digest(body.model_dump())
+    request_hash = digest(body.model_dump(mode="json", exclude_none=True))
     old = db.scalar(
         select(AiTask).where(
             AiTask.creator_id == p.user.id, AiTask.idempotency_key == idempotency_key
@@ -218,28 +250,7 @@ def create_task(
     if product.status != "ACTIVE":
         raise AppError(409, "PRODUCT_ARCHIVED", "已归档商品不能创建任务")
     config = available_config(db, enterprise, request.app.state.settings)
-    data = {
-        "input_params": body.input.model_dump(),
-        "source_refs": [
-            {
-                "ref": "D1",
-                "entity_type": "Product",
-                "id": str(product.id),
-                "version": product.version,
-            }
-        ],
-        "data_copy": {
-            "product": {
-                field: getattr(product, field)
-                for field in ("name", "category", "selling_points", "brand", "audience")
-            }
-        },
-        "metrics": {},
-        "missing_items": ["本次仅分析商品资料，未纳入经营日数据"],
-        "schema_version": "1",
-        "metric_version": "1",
-        "prompt_version": "product-profile-v1",
-    }
+    data = build_product_snapshot(db, product, body.input)
     task = AiTask(
         enterprise_id=enterprise.id,
         store_id=store.id,

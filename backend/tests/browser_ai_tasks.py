@@ -13,6 +13,8 @@ import json
 import os
 import subprocess
 import time
+from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -25,7 +27,8 @@ from websockets.sync.client import connect
 from app import ai_tasks, model_calls, product_generator
 from app.core.config import get_settings
 from app.core.db import make_engine
-from app.models import AiTask, Product
+from app.daily_data import business_today
+from app.models import AiTask, Product, ProductDaily
 
 
 def choose(browser, index, label):
@@ -109,6 +112,22 @@ def main():
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
     engine, browser = make_engine(settings), None
+    metrics_mode = os.environ.get("E2E_PRODUCT_METRICS") == "1"
+    if metrics_mode:
+        with Session(engine) as db:
+            for offset, amount in ((1, "90"), (2, "10"), (3, "45"), (4, "5")):
+                db.add(
+                    ProductDaily(
+                        store_id=int(store["id"]),
+                        product_id=int(product["id"]),
+                        business_date=business_today() - timedelta(days=offset),
+                        paid_amount=Decimal(amount),
+                        paid_orders=1,
+                        visitors=5,
+                        refund_amount=Decimal("0"),
+                    )
+                )
+            db.commit()
     checks = []
     try:
         until = time.monotonic() + 20
@@ -145,6 +164,24 @@ def main():
             browser.wait("document.body.innerText.includes('AI 商品分析')")
             choose(browser, 0, store["name"])
             choose(browser, 1, name)
+            if metrics_mode:
+                browser.fill(
+                    ".el-date-editor input[placeholder='开始日期']",
+                    str(business_today() - timedelta(days=2)),
+                )
+                browser.fill(
+                    ".el-date-editor input[placeholder='结束日期']",
+                    str(business_today() - timedelta(days=1)),
+                )
+                browser.evaluate(
+                    "document.querySelector('.el-date-editor input').dispatchEvent("
+                    "new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}))"
+                )
+                browser.wait("!!document.querySelector('.el-picker-panel')")
+                browser.evaluate(
+                    "document.querySelector('.el-date-editor input').dispatchEvent("
+                    "new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}))"
+                )
             browser.evaluate(
                 "(() => { const e=document.querySelector('textarea'); "
                 "Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'改进商品资料表达');"
@@ -172,6 +209,9 @@ def main():
                             "strengths": ["包装信息可能清晰"],
                             "issues": ["人群描述需验证"],
                             "actions": ["建议访谈目标用户"],
+                            "metric_refs": ["paid_amount"]
+                            if snapshot.get("metrics", {}).get("analysis_mode") == "DATA_SUPPORTED"
+                            else [],
                         },
                         snapshot,
                     ),
@@ -186,6 +226,17 @@ def main():
             )
             browser.wait("document.body.innerText.includes('待验证的判断')")
             checks.append("受控Worker单次生成、轮询更新、草稿与建议分区可见")
+            if metrics_mode:
+                browser.wait(
+                    "document.querySelector('.el-drawer')?.innerText.includes('服务端计算的经营指标')"
+                )
+                assert browser.evaluate(
+                    "document.querySelector('.el-drawer').innerText.includes('100.00 元')"
+                )
+                assert browser.evaluate(
+                    "document.querySelector('.el-drawer').innerText.includes('100.00%')"
+                )
+                checks.append("日期选择提交成功，展示本期100元与正式环比100%及SKU资料")
             with Session(engine) as db:
                 db.get(Product, int(product["id"])).name = "后续修改的商品名称"
                 db.commit()
