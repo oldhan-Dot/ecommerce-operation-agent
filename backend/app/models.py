@@ -81,6 +81,59 @@ class ModelConfig(Record, Base):
     revoked_at: Mapped[datetime | None] = mapped_column(PRECISE_TIME, nullable=True)
 
 
+class SchedulerState(Base):
+    __tablename__ = "scheduler_state"
+    enterprise_id: Mapped[int] = mapped_column(ForeignKey("enterprises.id"), primary_key=True)
+    updated_at: Mapped[datetime] = mapped_column(PRECISE_TIME, default=utcnow, onupdate=utcnow)
+
+
+class DailyCallUsage(Base):
+    __tablename__ = "daily_call_usage"
+    __table_args__ = (
+        UniqueConstraint("enterprise_id", "usage_date", name="uq_daily_call_usage"),
+        CheckConstraint("consumed >= 0 AND reserved >= 0", name="ck_call_usage_positive"),
+    )
+    id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
+    enterprise_id: Mapped[int] = mapped_column(ForeignKey("enterprises.id"))
+    usage_date: Mapped[date] = mapped_column(Date)
+    consumed: Mapped[int] = mapped_column(Integer, default=0)
+    reserved: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ModelCall(Base):
+    __tablename__ = "model_calls"
+    __table_args__ = (
+        UniqueConstraint("request_key", name="uq_model_call_key"),
+        ForeignKeyConstraint(
+            ["config_id", "enterprise_id"],
+            ["model_configs.id", "model_configs.enterprise_id"],
+            name="fk_call_config_enterprise",
+        ),
+        Index("ix_model_call_deadline", "enterprise_id", "status", "deadline_at"),
+        Index("ix_model_call_actor", "actor_id", "status"),
+        CheckConstraint(
+            "status IN ('RESERVED','STARTED','SUCCEEDED','FAILED','UNKNOWN','RELEASED')",
+            name="ck_model_call_status",
+        ),
+    )
+    id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
+    enterprise_id: Mapped[int] = mapped_column(ForeignKey("enterprises.id"))
+    config_id: Mapped[int] = mapped_column(ID)
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    purpose: Mapped[str] = mapped_column(String(32), default="CONNECTION_TEST")
+    status: Mapped[str] = mapped_column(String(16), default="RESERVED")
+    usage_date: Mapped[date] = mapped_column(Date)
+    request_key: Mapped[str] = mapped_column(String(64, collation="utf8mb4_bin"))
+    fence_token: Mapped[int] = mapped_column(BigInteger, default=0)
+    deadline_at: Mapped[datetime] = mapped_column(PRECISE_TIME)
+    created_at: Mapped[datetime] = mapped_column(PRECISE_TIME, default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(PRECISE_TIME, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(PRECISE_TIME, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    usage_tokens: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
 class User(Record, Base):
     __tablename__ = "users"
     __table_args__ = (UniqueConstraint("enterprise_id", "login_name", name="uq_user_login"),)

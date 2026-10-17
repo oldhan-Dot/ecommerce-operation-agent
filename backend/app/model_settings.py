@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 from app.core.errors import AppError
 from app.dependencies import administrator, get_db
 from app.identity import audit, result, stamp
-from app.models import Enterprise, ModelConfig, User
+from app.models import Enterprise, ModelCall, ModelConfig, User
 from app.schemas import Input
 
 router = APIRouter(prefix="/api/v1/settings/model", tags=["model-settings"])
@@ -163,7 +163,17 @@ def get_configuration(request: Request, p=Depends(administrator), db=Depends(get
         if enterprise.active_model_config_id
         else None
     )
-    return result(request, configuration_view(config))
+    view = configuration_view(config)
+    if config:
+        last_call = db.scalar(
+            select(ModelCall)
+            .where(ModelCall.config_id == config.id)
+            .order_by(ModelCall.id.desc())
+            .limit(1)
+        )
+        if last_call:
+            view["connection_status"] = last_call.status
+    return result(request, view)
 
 
 @router.put("")

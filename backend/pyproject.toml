@@ -18,6 +18,7 @@ dependencies = [
   "prometheus-client>=0.21,<1",
   "python-multipart>=0.0.32",
   "httpcore[asyncio]>=1.0.9,<1.1",
+  "tzdata>=2025.2",
 ]
 
 # 开发依赖仅用于测试和代码规范检查。

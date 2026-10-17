@@ -1,4 +1,4 @@
-"""独立 Worker：数据库环境检查、持久 CSV 预检和确认入库，尚不处理 AI 任务。"""
+"""独立 Worker：持久连接测试、调用恢复及 CSV 预检和确认入库；生成任务随后接入。"""
 
 import json
 import signal
@@ -14,6 +14,7 @@ from app.core.db import DatabaseProbe
 from app.import_execution import process_next_confirmation
 from app.import_retention import cleanup_imports
 from app.imports import process_next_import
+from app.model_calls import process_model_call
 
 
 def main() -> None:
@@ -25,7 +26,7 @@ def main() -> None:
         signal.signal(sig, lambda *_: stopped.set())
     previous = None
     next_cleanup = 0.0
-    print(json.dumps({"event": "worker_started", "mode": "csv_import"}), flush=True)
+    print(json.dumps({"event": "worker_started", "mode": "csv_and_model_calls"}), flush=True)
     try:
         while not stopped.is_set():
             result = probe.check()
@@ -38,7 +39,7 @@ def main() -> None:
                             "time": datetime.now(UTC).isoformat(),
                             "code": result.code,
                             "ready": result.ready,
-                            "mode": "csv_import",
+                            "mode": "csv_and_model_calls",
                         }
                     ),
                     flush=True,
@@ -69,12 +70,14 @@ def main() -> None:
                                     ),
                                     flush=True,
                                 )
+                        if process_model_call(db, settings):
+                            continue
                         if process_next_confirmation(db, settings) or process_next_import(
                             db, settings
                         ):
                             continue
                 except SQLAlchemyError:
-                    print(json.dumps({"event": "csv_import_database_unavailable"}), flush=True)
+                    print(json.dumps({"event": "worker_database_unavailable"}), flush=True)
             stopped.wait(settings.worker_poll_seconds)
     finally:
         probe.close()
