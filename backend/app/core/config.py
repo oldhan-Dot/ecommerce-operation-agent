@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # 开发、测试与生产环境共享配置模型，但应用不同的安全限制。
     app_env: Literal["dev", "test", "staging", "prod"] = "dev"
-    # 这里填写云端应用账号的连接参数，不使用数据库 root 账号。
+    # 本机与云端均使用应用账号连接，切换环境只修改配置，不使用数据库root账号。
     db_host: str = ""
     db_port: int = Field(default=3306, ge=1, le=65535)
     db_name: str = "ecommerce_agent"

@@ -2,14 +2,14 @@
 
 电商运营智能助手：单企业、多店铺，覆盖商品/SKU、竞品、三类日经营、CSV导入、指标看板、六类AI生成、不可变修订、人工审核和Markdown导出。管理员可配置DeepSeek、查询审计及运行监控。
 
-主要代码及本机受控验收已完成；真实模型、云端容量及正式部署仍需外部环境验收，详见[剩余开发执行清单](docs/剩余开发执行清单.md)。模型结果始终为人工审核草稿，不自动上架、发布或投放广告。
+已按用户确认完成开发交付：本机Docker MySQL8.4.11完整342项回归及实际应用登录/Worker验证通过。当前使用本机持久库，部署目标为云服务器，云连接配置与切换步骤已保留。详见[项目开发交付记录](docs/项目开发交付记录.md)。模型结果始终为人工审核草稿，不自动上架、发布或投放广告。
 
 ## 已准备的环境
 
 - 后端：Python 3.12、uv 管理的 backend/.venv、FastAPI、SQLAlchemy、PyMySQL、Alembic。
 - 前端：Vue 3、TypeScript、Vite、Element Plus、Router、Pinia、ECharts。
 - 独立 Worker：CSV预检/确认/清理、AI调度/生成/故障恢复、独立心跳与运维事件。
-- 数据库：用户部署的云端 MySQL，使用 backend/.env 中的配置连接。
+- 数据库：当前本机Docker MySQL8.4.11持久库，backend/.env连接127.0.0.1:13306；云服务器恢复后可切换云连接。
 - 数据库迁移：`uv run alembic upgrade head`，当前为`0016_observation_indexes`；不提供默认管理员或默认密码。
 
 ## 优先使用直接命令启动
@@ -87,6 +87,7 @@ uv run pytest -q
 - [运行监控与故障定位](docs/运行监控与故障定位.md)
 - [应用发布与备份恢复](docs/应用发布与备份恢复.md)
 - [总体验收矩阵](docs/总体验收矩阵.md)
+- [项目开发交付记录](docs/项目开发交付记录.md)：本机账号位置、持久库启动、云服务器切换。
 
 根目录 .env 是云端 Compose 配置，本机 backend/.env 是后端配置；二者都不提交。重建依赖使用 backend 的 uv.lock 与 frontend 的 package-lock.json。
 
