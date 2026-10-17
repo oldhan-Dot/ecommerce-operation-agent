@@ -3,6 +3,7 @@
 import json
 import signal
 import threading
+import time
 from datetime import UTC, datetime
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import DatabaseProbe
 from app.import_execution import process_next_confirmation
+from app.import_retention import cleanup_imports
 from app.imports import process_next_import
 
 
@@ -22,6 +24,7 @@ def main() -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stopped.set())
     previous = None
+    next_cleanup = 0.0
     print(json.dumps({"event": "worker_started", "mode": "csv_import"}), flush=True)
     try:
         while not stopped.is_set():
@@ -44,6 +47,28 @@ def main() -> None:
             if result.ready:
                 try:
                     with Session(probe.engine, expire_on_commit=False) as db:
+                        if time.monotonic() >= next_cleanup:
+                            next_cleanup = (
+                                time.monotonic() + settings.import_cleanup_interval_seconds
+                            )
+                            try:
+                                counts = cleanup_imports(db, settings)
+                                if any(counts.values()):
+                                    print(
+                                        json.dumps({"event": "import_cleanup", **counts}),
+                                        flush=True,
+                                    )
+                            except SQLAlchemyError:
+                                db.rollback()
+                                print(
+                                    json.dumps(
+                                        {
+                                            "event": "import_cleanup_failed",
+                                            "code": "SYS_DB_UNAVAILABLE",
+                                        }
+                                    ),
+                                    flush=True,
+                                )
                         if process_next_confirmation(db, settings) or process_next_import(
                             db, settings
                         ):

@@ -20,12 +20,13 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.mysql import BIGINT, BINARY
+from sqlalchemy.dialects.mysql import BIGINT, BINARY, DATETIME
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 
 ID = BigInteger().with_variant(BIGINT(unsigned=True), "mysql")
+PRECISE_TIME = DateTime().with_variant(DATETIME(fsp=6), "mysql")
 
 
 def utcnow() -> datetime:
@@ -229,6 +230,7 @@ class ImportBatch(Record, Base):
     __tablename__ = "import_batches"
     __table_args__ = (
         Index("ix_import_queue", "status", "created_at", "id"),
+        Index("ix_import_retention", "status", "finished_at", "id"),
         UniqueConstraint("creator_id", "confirm_key", name="uq_import_confirm"),
     )
     enterprise_id: Mapped[int] = mapped_column(ForeignKey("enterprises.id", ondelete="RESTRICT"))
@@ -252,6 +254,10 @@ class ImportBatch(Record, Base):
     lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(PRECISE_TIME, nullable=True)
+    rows_purged_at: Mapped[datetime | None] = mapped_column(PRECISE_TIME, nullable=True)
+    file_deleted_at: Mapped[datetime | None] = mapped_column(PRECISE_TIME, nullable=True)
+    cleanup_retry_at: Mapped[datetime | None] = mapped_column(PRECISE_TIME, nullable=True)
 
 
 class ImportRow(Base):

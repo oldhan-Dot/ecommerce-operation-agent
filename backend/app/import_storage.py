@@ -29,3 +29,11 @@ def read_upload(name, settings):
     if len(raw) > MAX_BYTES:
         raise CsvFormatError("文件不能超过 10 MB")
     return raw
+
+
+def remove_upload(name, settings):
+    """清理单个系统生成的 CSV；拒绝路径穿越及文件链接，允许崩溃重试时文件已不存在。"""
+    path = upload_path(name, settings)
+    if (upload_root(settings) / name).is_symlink():
+        raise ValueError("文件链接不允许清理")
+    path.unlink(missing_ok=True)

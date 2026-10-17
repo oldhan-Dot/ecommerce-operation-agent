@@ -79,6 +79,9 @@ def batch_view(batch):
         "error_message": batch.error_message,
         "created_at": stamp(batch.created_at),
         "preview_expires_at": stamp(batch.preview_expires_at),
+        "finished_at": stamp(batch.finished_at),
+        "rows_purged_at": stamp(batch.rows_purged_at),
+        "file_deleted_at": stamp(batch.file_deleted_at),
         "can_confirm": batch.status == "PREVIEWED"
         and bool(batch.preview_expires_at and batch.preview_expires_at > utcnow()),
     }
@@ -284,7 +287,9 @@ def csv_safe(value):
 
 @router.get("/imports/{batch_id}/errors")
 def errors_csv(batch_id: int, p=Depends(current_user), db=Depends(get_db)):
-    visible_batch(db, p, batch_id)
+    batch = visible_batch(db, p, batch_id)
+    if batch.rows_purged_at:
+        raise AppError(410, "IMPORT_DETAILS_EXPIRED", "逐行明细已按保留期清理，请查看批次摘要")
     output = io.StringIO(newline="")
     writer = csv.writer(output)
     writer.writerow(["row_no", "business_key", "field", "message"])
@@ -394,6 +399,10 @@ def process_next_import(db: Session, settings):
         batch.new_count = sum(not r.errors and r.action == "NEW" for r in rows)
         batch.overwrite_count = sum(not r.errors and r.action == "OVERWRITE" for r in rows)
         batch.status = "INVALID" if batch.error_count else "PREVIEWED"
+        if batch.error_count:
+            batch.finished_at = utcnow()
+            batch.error_code = "IMPORT_ROWS_INVALID"
+            batch.error_message = f"共 {batch.error_count} 行存在错误，请修正后重新上传"
         batch.preview_token = secrets.token_hex(32) if not batch.error_count else None
         batch.preview_expires_at = (
             utcnow() + timedelta(minutes=30) if not batch.error_count else None
@@ -439,6 +448,7 @@ def fail_import(db, batch_id, owner, code, message):
     batch = db.scalar(select(ImportBatch).where(ImportBatch.id == batch_id).with_for_update())
     if batch and batch.lease_owner == owner and batch.status == "VALIDATING":
         batch.status, batch.error_code, batch.error_message = "FAILED", code, message
+        batch.finished_at = utcnow()
         batch.lease_owner = batch.lease_until = None
         db.add(
             AuditEvent(

@@ -254,6 +254,7 @@ def process_next_confirmation(db, settings):
             raise AppError(409, "IMPORT_OVERWRITE_REQUIRED", "覆盖已有记录需要明确确认")
         write_rows(db, batch, rows, owner)
         batch.status = "SUCCEEDED"
+        batch.finished_at = utcnow()
         batch.lease_owner = batch.lease_until = None
         event(db, batch, owner, "IMPORT_SUCCEEDED", batch, {"row_count": batch.row_count})
         db.commit()
@@ -267,6 +268,7 @@ def process_next_confirmation(db, settings):
         )
         if batch and batch.status == "IMPORTING" and batch.lease_owner == owner:
             batch.status = "FAILED"
+            batch.finished_at = utcnow()
             batch.error_code = exc.code if isinstance(exc, AppError) else "IMPORT_EXECUTION_FAILED"
             batch.error_message = (
                 exc.message

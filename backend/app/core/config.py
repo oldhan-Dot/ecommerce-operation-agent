@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     allowed_model_hosts: list[str] = []
     upload_dir: str = ".local/uploads"
     worker_poll_seconds: int = Field(default=10, ge=1, le=300)
+    import_cleanup_interval_seconds: int = Field(default=3600, ge=60, le=86400)
 
     @property
     def database_configured(self) -> bool:
