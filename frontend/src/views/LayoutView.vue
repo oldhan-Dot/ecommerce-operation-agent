@@ -35,6 +35,7 @@ async function logout() {
         <router-link to="/daily-data/ad" active-class="selected">▥　投放日经营</router-link>
         <router-link to="/imports" active-class="selected">⇧　CSV 批量导入</router-link>
         <template v-if="auth.user?.role === 'ADMIN'">
+          <router-link to="/operations" active-class="selected">◉　运行监控</router-link>
           <router-link to="/users" active-class="selected">♙　团队与权限</router-link>
           <router-link to="/audit" active-class="selected">☷　审计日志</router-link>
           <router-link to="/settings/model" active-class="selected">⚙　模型配置</router-link>

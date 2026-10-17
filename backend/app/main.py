@@ -1,7 +1,9 @@
 """FastAPI 入口：当前提供环境存活、就绪检查及本机 API 文档。"""
 
+import json
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from time import monotonic
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -23,6 +25,8 @@ from app.identity import init_rate_limit, router
 from app.imports import router as import_router
 from app.model_calls import router as model_calls_router
 from app.model_settings import router as model_settings_router
+from app.operations import HttpMetrics
+from app.operations import router as operations_router
 from app.product_daily import router as product_daily_router
 
 
@@ -47,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.database = database
+    app.state.http_metrics = HttpMetrics()
     init_rate_limit(app)
     app.include_router(router)
     app.include_router(catalog_router)
@@ -60,6 +65,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(model_calls_router)
     app.include_router(ai_tasks_router)
     app.include_router(artifacts_router)
+    app.include_router(operations_router)
 
     @app.exception_handler(AppError)
     async def business_error(request: Request, exc: AppError):
@@ -102,7 +108,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.middleware("http")
     async def request_id(request: Request, call_next):
         request.state.request_id = uuid4().hex
-        response = await call_next(request)
+        started = monotonic()
+        try:
+            response = await call_next(request)
+        except Exception:
+            response = JSONResponse(
+                status_code=500,
+                content={
+                    "error": {"code": "SYS_INTERNAL_ERROR", "message": "服务暂时异常，请稍后重试"},
+                    "request_id": request.state.request_id,
+                },
+            )
+        elapsed = (monotonic() - started) * 1000
+        app.state.http_metrics.record(response.status_code, elapsed)
+        print(
+            json.dumps(
+                {
+                    "event": "http_request",
+                    "request_id": request.state.request_id,
+                    "route": getattr(request.scope.get("route"), "path", "unmatched"),
+                    "method": request.method,
+                    "status": response.status_code,
+                    "elapsed_ms": round(elapsed, 2),
+                }
+            ),
+            flush=True,
+        )
         response.headers["X-Request-ID"] = request.state.request_id
         response.headers["Cache-Control"] = "no-store"
         return response

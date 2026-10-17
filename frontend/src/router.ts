@@ -11,6 +11,11 @@ export const router = createRouter({
       component: () => import('./views/LayoutView.vue'),
       children: [
         {
+          path: 'operations',
+          component: () => import('./views/OperationsView.vue'),
+          meta: { title: '运行监控', admin: true },
+        },
+        {
           path: 'ai-tasks',
           component: () => import('./views/AiTasksView.vue'),
           meta: { title: 'AI 工作台' },

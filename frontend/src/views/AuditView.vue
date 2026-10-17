@@ -17,6 +17,10 @@ const page = ref(1)
 const total = ref(0)
 const loading = ref(false)
 const error = ref('')
+const requestId = ref(''),
+  action = ref(''),
+  targetType = ref(''),
+  targetId = ref('')
 const labels: Record<string, string> = {
   LOGIN: '登录',
   LOGOUT: '退出',
@@ -35,7 +39,15 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const data = await api<Page<Audit>>(`/audit-events?page=${page.value}`)
+    const params = new URLSearchParams({ page: String(page.value) })
+    for (const [key, value] of Object.entries({
+      request_id: requestId.value,
+      action: action.value,
+      target_type: targetType.value,
+      target_id: targetId.value,
+    }))
+      if (value) params.set(key, value)
+    const data = await api<Page<Audit>>(`/audit-events?${params}`)
     rows.value = data.items
     total.value = data.total
   } catch (e) {
@@ -45,6 +57,10 @@ async function load() {
   }
 }
 onMounted(load)
+function filter() {
+  page.value = 1
+  void load()
+}
 </script>
 <template>
   <div class="page-heading">
@@ -56,6 +72,18 @@ onMounted(load)
   </div>
   <el-alert v-if="error" :title="error" type="error" :closable="false" />
   <section class="surface">
+    <div style="display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap">
+      <el-input v-model="requestId" placeholder="关联请求编号" clearable style="width: 240px" />
+      <el-input v-model="action" placeholder="动作编码" clearable style="width: 180px" />
+      <el-input
+        v-model="targetType"
+        placeholder="对象类型，如 ai_tasks"
+        clearable
+        style="width: 180px"
+      />
+      <el-input v-model="targetId" placeholder="对象编号" clearable style="width: 140px" />
+      <el-button @click="filter">查询</el-button>
+    </div>
     <el-table v-loading="loading" :data="rows"
       ><el-table-column type="expand"
         ><template #default="{ row }"

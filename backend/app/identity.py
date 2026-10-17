@@ -504,10 +504,22 @@ def list_audits(
     request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    request_id: str | None = Query(None, max_length=64),
+    action: str | None = Query(None, max_length=64),
+    target_type: str | None = Query(None, max_length=64),
+    target_id: str | None = Query(None, max_length=64),
     p=Depends(administrator),
     db=Depends(get_db),
 ):
     query = select(AuditEvent).where(AuditEvent.enterprise_id == p.user.enterprise_id)
+    for column, value in (
+        (AuditEvent.request_id, request_id),
+        (AuditEvent.action, action),
+        (AuditEvent.target_type, target_type),
+        (AuditEvent.target_id, target_id),
+    ):
+        if value:
+            query = query.where(column == value)
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     rows = db.scalars(
         query.order_by(AuditEvent.id.desc()).offset((page - 1) * page_size).limit(page_size)

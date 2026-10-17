@@ -43,6 +43,13 @@ class Record:
     version: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class ServiceHeartbeat(Base):
+    __tablename__ = "service_heartbeats"
+    instance_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    service: Mapped[str] = mapped_column(String(32))
+    seen_at: Mapped[datetime] = mapped_column(PRECISE_TIME, index=True)
+
+
 class Enterprise(Record, Base):
     __tablename__ = "enterprises"
     __table_args__ = (
@@ -111,6 +118,7 @@ class ModelCall(Base):
         ),
         Index("ix_model_call_deadline", "enterprise_id", "status", "deadline_at"),
         Index("ix_model_call_actor", "actor_id", "status"),
+        Index("ix_model_call_observe", "enterprise_id", "finished_at", "status"),
         CheckConstraint(
             "status IN ('RESERVED','STARTED','SUCCEEDED','FAILED','UNKNOWN','RELEASED')",
             name="ck_model_call_status",
@@ -408,6 +416,7 @@ class ImportBatch(Record, Base):
     __table_args__ = (
         Index("ix_import_queue", "status", "created_at", "id"),
         Index("ix_import_retention", "status", "finished_at", "id"),
+        Index("ix_import_observe", "finished_at", "enterprise_id"),
         UniqueConstraint("creator_id", "confirm_key", name="uq_import_confirm"),
     )
     enterprise_id: Mapped[int] = mapped_column(ForeignKey("enterprises.id", ondelete="RESTRICT"))

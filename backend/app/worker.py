@@ -5,6 +5,7 @@ import signal
 import threading
 import time
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -16,6 +17,7 @@ from app.import_execution import process_next_confirmation
 from app.import_retention import cleanup_imports
 from app.imports import process_next_import
 from app.model_calls import process_model_call
+from app.operations import watch_worker
 
 
 def main() -> None:
@@ -27,6 +29,7 @@ def main() -> None:
         signal.signal(sig, lambda *_: stopped.set())
     previous = None
     next_cleanup = 0.0
+    monitor = None
     print(json.dumps({"event": "worker_started", "mode": "csv_and_model_calls"}), flush=True)
     try:
         while not stopped.is_set():
@@ -47,6 +50,11 @@ def main() -> None:
                 )
                 previous = result.code
             if result.ready:
+                if monitor is None:
+                    monitor = threading.Thread(
+                        target=watch_worker, args=(probe.engine, stopped, uuid4().hex), daemon=True
+                    )
+                    monitor.start()
                 try:
                     with Session(probe.engine, expire_on_commit=False) as db:
                         if time.monotonic() >= next_cleanup:
@@ -65,7 +73,7 @@ def main() -> None:
                                 print(
                                     json.dumps(
                                         {
-                                            "event": "import_cleanup_failed",
+                                            "event": "OPS_IMPORT_CLEANUP_FAILED",
                                             "code": "SYS_DB_UNAVAILABLE",
                                         }
                                     ),
@@ -83,6 +91,9 @@ def main() -> None:
                     print(json.dumps({"event": "worker_database_unavailable"}), flush=True)
             stopped.wait(settings.worker_poll_seconds)
     finally:
+        stopped.set()
+        if monitor:
+            monitor.join(timeout=15)
         probe.close()
         print(json.dumps({"event": "worker_stopped"}), flush=True)
 

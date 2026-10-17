@@ -109,7 +109,14 @@ def test_approval_idempotency_and_historical_export(draft):
         ).status_code
         == 409
     )
-    assert db.scalar(select(func.count()).select_from(ArtifactReview)) == 1
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(ArtifactReview)
+            .where(ArtifactReview.version_id == int(approved["id"]))
+        )
+        == 1
+    )
     headers = sign_in(client, people["admin"])
     assert save(client, headers, get(client, artifact)).status_code == 201
     url = f"/api/v1/artifact-versions/{approved['id']}/export?mode=official"
