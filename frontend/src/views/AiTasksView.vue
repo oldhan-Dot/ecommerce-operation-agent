@@ -11,11 +11,31 @@ interface Task {
   error_code: string | null
   queued_at: string
   artifact_id: string | null
+  task_type: TaskType
+}
+type TaskType =
+  | 'PRODUCT_ANALYSIS'
+  | 'COMPETITOR_ANALYSIS'
+  | 'THEME_IDEAS'
+  | 'VIDEO_SCRIPT'
+  | 'AD_STRATEGY'
+  | 'BUSINESS_REVIEW'
+const taskNames: Record<TaskType, string> = {
+  PRODUCT_ANALYSIS: '商品分析',
+  COMPETITOR_ANALYSIS: '竞品分析',
+  THEME_IDEAS: '主题创意',
+  VIDEO_SCRIPT: '视频脚本',
+  AD_STRATEGY: '投放建议',
+  BUSINESS_REVIEW: '经营复盘',
 }
 interface Detail extends Task {
   snapshot: {
-    input_params: { goal: string }
-    data_copy: { product: { name: string } }
+    input_params: { goal?: string }
+    data_copy: {
+      product?: { name: string }
+      products?: { product: { name: string } }[]
+      store?: { name: string }
+    }
     source_refs: { version: number }[]
     missing_items: string[]
   }
@@ -40,6 +60,37 @@ interface Detail extends Task {
       hypotheses: { text: string }[]
       recommendations: { text: string }[]
       missing_items: string[]
+      payload?: {
+        ideas?: { name: string; insight: string; angle: string; direction: string; cta: string }[]
+        shots?: {
+          start: number
+          end: number
+          visual: string
+          voiceover: string
+          subtitle: string
+          props: string[]
+        }[]
+        closing?: string
+        comparison_rows?: {
+          ref: string
+          name: string
+          platform: string
+          spec: string | null
+          price: string | null
+          source_note: string
+          source_url: string | null
+          collected_at: string
+          price_comparable: boolean
+        }[]
+        opportunities?: string[]
+        risks?: string[]
+        allocations?: { channel: string; amount: string; percent: string }[]
+        tests?: string[]
+        stop_rules?: string[]
+        anomalies?: { metric_ref: string; reasoning: string }[]
+        assumptions?: string[]
+        next_actions?: string[]
+      }
     }
   } | null
 }
@@ -56,8 +107,8 @@ interface Product {
 }
 interface TaskBody {
   store_id: string
-  task_type: 'PRODUCT_ANALYSIS'
-  input: { product_id: string; goal: string; start_date?: string; end_date?: string }
+  task_type: TaskType
+  input: Record<string, unknown>
 }
 const stores = ref<Store[]>([]),
   products = ref<Product[]>([])
@@ -65,6 +116,38 @@ const storeId = ref(''),
   productId = ref(''),
   goal = ref('')
 const period = ref<[string, string] | null>(null)
+const taskType = ref<TaskType>('PRODUCT_ANALYSIS'),
+  productIds = ref<string[]>([])
+const competitorIds = ref<string[]>([]),
+  competitors = ref<{ id: string; name: string }[]>([])
+const audience = ref(''),
+  tone = ref(''),
+  constraints = ref(''),
+  theme = ref(''),
+  style = ref('')
+const ideaCount = ref(5),
+  duration = ref(30),
+  forbiddenTerms = ref<string[]>([])
+const budget = ref(''),
+  channels = ref<string[]>([]),
+  targets = ref<string[]>([])
+const historyPeriod = ref<[string, string] | null>(null)
+const dimensions = ref(['price', 'selling_points'])
+const multiProducts = computed(() => ['THEME_IDEAS', 'AD_STRATEGY'].includes(taskType.value))
+const needsPeriod = computed(() => ['AD_STRATEGY', 'BUSINESS_REVIEW'].includes(taskType.value))
+const canCreate = computed(
+  () =>
+    !!storeId.value &&
+    validPeriod.value &&
+    (!needsPeriod.value || !!period.value) &&
+    (taskType.value === 'BUSINESS_REVIEW' ||
+      (multiProducts.value ? productIds.value.length > 0 : !!productId.value)) &&
+    (taskType.value === 'COMPETITOR_ANALYSIS'
+      ? competitorIds.value.length > 0 && dimensions.value.length > 0
+      : !!goal.value.trim()) &&
+    (!['THEME_IDEAS', 'VIDEO_SCRIPT'].includes(taskType.value) || !!audience.value.trim()) &&
+    (taskType.value !== 'AD_STRATEGY' || (Number(budget.value) > 0 && channels.value.length > 0)),
+)
 const validPeriod = computed(
   () =>
     !period.value ||
@@ -148,10 +231,31 @@ async function searchProducts(keyword = '') {
     if (sequence === productRequest) error.value = errorMessage(e)
   }
 }
+async function searchCompetitors(keyword = '') {
+  if (!storeId.value) return
+  try {
+    const result = await api<Page<{ id: string; name: string }>>(
+      `/competitors?store_id=${storeId.value}&status=ACTIVE&page_size=100&keyword=${encodeURIComponent(keyword)}`,
+    )
+    competitors.value = result.items
+  } catch (e) {
+    error.value = errorMessage(e)
+  }
+}
 watch(storeId, () => {
   productId.value = ''
+  productIds.value = []
+  competitorIds.value = []
+  competitors.value = []
   products.value = []
   searchProducts()
+  searchCompetitors()
+})
+watch(taskType, () => {
+  error.value = ''
+  productIds.value = []
+  competitorIds.value = []
+  period.value = null
 })
 
 /** 查询失败不清空历史，也不会自动重发付费任务；离开页面停止轮询。 */
@@ -180,22 +284,56 @@ async function open(task: Task) {
   }
 }
 async function create() {
-  if (submitting.value || (!pending.value && !validPeriod.value)) return
+  if (submitting.value || (!pending.value && !canCreate.value)) return
   submitting.value = true
   error.value = ''
   try {
     if (!pending.value) {
       await ElMessageBox.confirm(
-        '将冻结当前商品资料并调用模型生成草稿，执行时消耗企业额度，可能产生费用。',
-        '生成商品资料分析',
+        '将冻结选定资料并调用模型生成草稿，执行时消耗企业额度，可能产生费用。',
+        `生成${taskNames[taskType.value]}`,
       )
       pending.value = {
         key: crypto.randomUUID(),
         body: {
           store_id: storeId.value,
-          task_type: 'PRODUCT_ANALYSIS',
-          input: { product_id: productId.value, goal: goal.value.trim() },
+          task_type: taskType.value,
+          input: {},
         },
+      }
+      const input = pending.value.body.input
+      if (taskType.value !== 'BUSINESS_REVIEW') {
+        if (multiProducts.value) input.product_ids = productIds.value
+        else input.product_id = productId.value
+      }
+      if (taskType.value !== 'COMPETITOR_ANALYSIS') input.goal = goal.value.trim()
+      if (taskType.value === 'COMPETITOR_ANALYSIS') {
+        input.competitor_ids = competitorIds.value
+        input.dimensions = dimensions.value
+      }
+      if (['THEME_IDEAS', 'VIDEO_SCRIPT'].includes(taskType.value))
+        input.audience = audience.value.trim()
+      if (taskType.value === 'THEME_IDEAS') {
+        input.count = ideaCount.value
+        if (tone.value) input.tone = tone.value
+        if (constraints.value) input.constraints = constraints.value
+      }
+      if (taskType.value === 'VIDEO_SCRIPT') {
+        input.duration_seconds = duration.value
+        input.forbidden_terms = forbiddenTerms.value
+        if (theme.value) input.theme = theme.value
+        if (style.value) input.style = style.value
+      }
+      if (taskType.value === 'AD_STRATEGY') {
+        input.budget = budget.value
+        input.channels = channels.value
+        input.target_metrics = targets.value
+        if (audience.value) input.audience = audience.value
+        if (historyPeriod.value)
+          input.history_period = {
+            start_date: historyPeriod.value[0],
+            end_date: historyPeriod.value[1],
+          }
       }
       if (period.value) {
         pending.value.body.input.start_date = period.value[0]
@@ -227,6 +365,8 @@ async function create() {
         'AUTH_FORBIDDEN',
         'MODEL_HOST_NOT_ALLOWED',
         'MODEL_KEY_UNAVAILABLE',
+        'AI_INSUFFICIENT_DATA',
+        'AI_INVALID_INPUT',
       ].includes(e.code)
     )
       pending.value = null
@@ -285,14 +425,23 @@ onUnmounted(() => {
 <template>
   <div class="page-heading">
     <div>
-      <h1>AI 商品分析</h1>
-      <p>从已录入的商品资料出发，生成有来源、待验证的运营建议。</p>
+      <h1>AI 运营工作台</h1>
+      <p>冻结有权限的资料，生成可追溯、待人工审核的运营草稿。</p>
     </div>
   </div>
   <el-alert v-if="error" :title="error" type="error" :closable="false" />
   <section class="surface narrow">
+    <el-radio-group v-model="taskType" :disabled="submitting || !!pending" class="task-types">
+      <el-radio-button v-for="(label, kind) in taskNames" :key="kind" :value="kind">{{
+        label
+      }}</el-radio-button>
+    </el-radio-group>
     <el-alert
-      title="可选择最多90天的商品经营数据；不选日期或本期无数据时仅作资料分析。结果均为待审核草稿。"
+      :title="
+        taskType === 'BUSINESS_REVIEW'
+          ? '本期和紧邻等长上期须至少各有一条店铺经营记录；数据不完整时不输出正式环比。'
+          : '所选来源须属于当前店铺；结果均为待审核草稿。商品分析可选最多90天经营数据，无数据时仅作资料分析。'
+      "
       type="info"
       :closable="false"
     />
@@ -311,8 +460,30 @@ onUnmounted(() => {
             :label="store.name"
             :value="store.id" /></el-select
       ></el-form-item>
-      <el-form-item label="商品" required
-        ><el-select
+      <el-form-item
+        v-if="taskType !== 'BUSINESS_REVIEW'"
+        :label="multiProducts ? '商品（1–5个）' : '商品'"
+        required
+      >
+        <el-select
+          v-if="multiProducts"
+          v-model="productIds"
+          multiple
+          :multiple-limit="5"
+          :disabled="!storeId"
+          filterable
+          remote
+          :remote-method="searchProducts"
+          placeholder="选择或搜索商品"
+          style="width: 100%"
+          ><el-option
+            v-for="product in products"
+            :key="product.id"
+            :label="product.name"
+            :value="product.id"
+        /></el-select>
+        <el-select
+          v-else
           v-model="productId"
           :disabled="!storeId"
           filterable
@@ -326,7 +497,44 @@ onUnmounted(() => {
             :label="product.name"
             :value="product.id" /></el-select
       ></el-form-item>
-      <el-form-item label="经营日期（可选，最多90天）">
+      <template v-if="taskType === 'COMPETITOR_ANALYSIS'">
+        <el-form-item label="竞品（1–5个）" required
+          ><el-select
+            v-model="competitorIds"
+            multiple
+            :multiple-limit="5"
+            filterable
+            remote
+            :remote-method="searchCompetitors"
+            :disabled="!storeId"
+            placeholder="选择有来源的竞品"
+            style="width: 100%"
+            ><el-option
+              v-for="item in competitors"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id" /></el-select
+        ></el-form-item>
+        <el-form-item label="比较维度" required
+          ><el-checkbox-group v-model="dimensions"
+            ><el-checkbox value="price">价格</el-checkbox
+            ><el-checkbox value="selling_points">卖点</el-checkbox
+            ><el-checkbox value="brand">品牌</el-checkbox
+            ><el-checkbox value="spec">规格</el-checkbox></el-checkbox-group
+          ></el-form-item
+        >
+      </template>
+      <el-form-item
+        v-if="['PRODUCT_ANALYSIS', 'AD_STRATEGY', 'BUSINESS_REVIEW'].includes(taskType)"
+        :label="
+          taskType === 'AD_STRATEGY'
+            ? '计划投放日期（1–90天，可含未来日）'
+            : needsPeriod
+              ? '经营日期（必填，最多90天）'
+              : '经营日期（可选，最多90天）'
+        "
+        :required="needsPeriod"
+      >
         <el-date-picker
           v-model="period"
           type="daterange"
@@ -337,7 +545,7 @@ onUnmounted(() => {
         />
       </el-form-item>
       <p v-if="!validPeriod" class="muted small">请选择不超过90天的有效日期区间。</p>
-      <el-form-item label="分析目标" required
+      <el-form-item v-if="taskType !== 'COMPETITOR_ANALYSIS'" label="分析目标" required
         ><el-input
           v-model="goal"
           type="textarea"
@@ -346,13 +554,91 @@ onUnmounted(() => {
           show-word-limit
           placeholder="例如：找出商品信息表达中需要验证和改进的方向"
       /></el-form-item>
-      <el-button
-        type="primary"
-        native-type="submit"
-        :loading="submitting"
-        :disabled="!storeId || !productId || !goal.trim() || !validPeriod"
-        >生成资料分析</el-button
-      >
+      <el-form-item
+        v-if="['THEME_IDEAS', 'VIDEO_SCRIPT', 'AD_STRATEGY'].includes(taskType)"
+        label="目标人群"
+        :required="taskType !== 'AD_STRATEGY'"
+        ><el-input v-model="audience" maxlength="2000" placeholder="明确草稿面向的人群"
+      /></el-form-item>
+      <template v-if="taskType === 'THEME_IDEAS'">
+        <el-form-item label="创意数量" required
+          ><el-input-number v-model="ideaCount" :min="1" :max="10" :precision="0"
+        /></el-form-item>
+        <el-form-item label="语气（可选）"
+          ><el-input v-model="tone" maxlength="100"
+        /></el-form-item>
+        <el-form-item label="内容约束（可选）"
+          ><el-input v-model="constraints" type="textarea" maxlength="5000"
+        /></el-form-item>
+      </template>
+      <template v-if="taskType === 'VIDEO_SCRIPT'">
+        <el-form-item label="总时长" required
+          ><el-select v-model="duration"
+            ><el-option
+              v-for="seconds in [15, 30, 60]"
+              :key="seconds"
+              :label="`${seconds}秒`"
+              :value="seconds" /></el-select
+        ></el-form-item>
+        <el-form-item label="主题（可选）"
+          ><el-input v-model="theme" maxlength="100"
+        /></el-form-item>
+        <el-form-item label="风格（可选）"
+          ><el-input v-model="style" maxlength="100"
+        /></el-form-item>
+        <el-form-item label="禁用词（输入后回车，最多30个）"
+          ><el-select
+            v-model="forbiddenTerms"
+            multiple
+            filterable
+            allow-create
+            :multiple-limit="30"
+            style="width: 100%"
+        /></el-form-item>
+      </template>
+      <template v-if="taskType === 'AD_STRATEGY'">
+        <el-form-item label="总预算（元）" required
+          ><el-input
+            v-model="budget"
+            inputmode="decimal"
+            placeholder="例如 1000.00，最多两位小数"
+            maxlength="19"
+        /></el-form-item>
+        <el-form-item label="渠道（1–5个，可输入新增）" required
+          ><el-select
+            v-model="channels"
+            multiple
+            filterable
+            allow-create
+            :multiple-limit="5"
+            style="width: 100%"
+            ><el-option
+              v-for="channel in ['搜索', '推荐', '内容']"
+              :key="channel"
+              :label="channel"
+              :value="channel" /></el-select
+        ></el-form-item>
+        <el-form-item label="历史参考期（可选，默认近7个已结束日）"
+          ><el-date-picker
+            v-model="historyPeriod"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            start-placeholder="历史开始日"
+            end-placeholder="历史结束日"
+        /></el-form-item>
+        <el-form-item label="目标指标（可选，输入后回车）"
+          ><el-select
+            v-model="targets"
+            multiple
+            filterable
+            allow-create
+            :multiple-limit="10"
+            style="width: 100%"
+        /></el-form-item>
+      </template>
+      <el-button type="primary" native-type="submit" :loading="submitting" :disabled="!canCreate">{{
+        taskType === 'PRODUCT_ANALYSIS' ? '生成资料分析' : `生成${taskNames[taskType]}`
+      }}</el-button>
     </el-form>
     <div v-if="pending" class="actions">
       <el-button :loading="submitting" @click="create">确认上次提交</el-button
@@ -367,6 +653,11 @@ onUnmounted(() => {
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" />
     <el-table :data="tasks" empty-text="暂无任务，选择商品开始分析">
       <el-table-column prop="id" label="任务编号" width="100" />
+      <el-table-column label="类型" min-width="110"
+        ><template #default="{ row }">{{
+          taskNames[row.task_type as TaskType] ?? row.task_type
+        }}</template></el-table-column
+      >
       <el-table-column label="状态" min-width="140"
         ><template #default="{ row }">{{
           statuses[row.status] ?? row.status
@@ -404,10 +695,16 @@ onUnmounted(() => {
   <el-drawer v-model="drawer" title="商品分析任务" size="min(760px, 95vw)">
     <template v-if="selected">
       <p>任务 {{ selected.id }} · {{ statuses[selected.status] }}</p>
-      <h2>{{ selected.snapshot.data_copy.product.name }}</h2>
-      <p>分析目标：{{ selected.snapshot.input_params.goal }}</p>
+      <h2>
+        {{
+          selected.snapshot.data_copy.product?.name ??
+          (selected.snapshot.data_copy.products?.map((item) => item.product.name).join('、') ||
+            selected.snapshot.data_copy.store?.name)
+        }}
+      </h2>
+      <p>分析目标：{{ selected.snapshot.input_params.goal ?? '按选择维度核对竞品资料' }}</p>
       <p class="muted small">
-        提交时商品资料版本 {{ selected.snapshot.source_refs[0]?.version }} · 剩余可重试
+        提交时来源资料版本 {{ selected.snapshot.source_refs[0]?.version }} · 剩余可重试
         {{ selected.retries_remaining }} 次
       </p>
       <el-alert
@@ -427,7 +724,7 @@ onUnmounted(() => {
           type="warning"
           :closable="false"
         />
-        <h3>已录入的商品资料</h3>
+        <h3 v-if="selected.draft.content.facts.length">已录入的来源资料</h3>
         <p v-for="fact in selected.draft.content.facts" :key="fact.field">
           {{ fieldNames[fact.field] ?? fact.field }}：{{ fact.text }}
         </p>
@@ -482,11 +779,68 @@ onUnmounted(() => {
             >
           </el-table>
         </template>
-        <h3>待验证的判断</h3>
+        <template v-if="selected.draft.content.payload?.comparison_rows">
+          <h3>竞品来源与对比</h3>
+          <article v-for="row in selected.draft.content.payload.comparison_rows" :key="row.ref">
+            <h4>{{ row.name }} · {{ row.platform }}</h4>
+            <p>
+              规格：{{ row.spec ?? '未知' }} · 价格：{{ metricText(row.price, 'money') }} ·
+              {{ row.price_comparable ? '规格相同，可核对价格' : '规格/价格不可直接比较' }}
+            </p>
+            <p>来源：{{ row.source_note }} · 采集日期：{{ row.collected_at }}</p>
+            <p v-if="row.source_url">{{ row.source_url }}</p>
+          </article>
+        </template>
+        <template v-if="selected.draft.content.payload?.ideas">
+          <h3>主题创意</h3>
+          <article v-for="(idea, i) in selected.draft.content.payload.ideas" :key="i">
+            <h4>{{ i + 1 }}. {{ idea.name }}</h4>
+            <p>洞察假设：{{ idea.insight }}</p>
+            <p>切入角度：{{ idea.angle }}</p>
+            <p>内容方向：{{ idea.direction }}</p>
+            <p>行动引导：{{ idea.cta }}</p>
+          </article>
+        </template>
+        <template v-if="selected.draft.content.payload?.shots">
+          <h3>视频分镜脚本</h3>
+          <article v-for="(shot, i) in selected.draft.content.payload.shots" :key="i">
+            <h4>{{ shot.start }}–{{ shot.end }}秒</h4>
+            <p>画面：{{ shot.visual }}</p>
+            <p>口播：{{ shot.voiceover }}</p>
+            <p>字幕：{{ shot.subtitle }}</p>
+            <p>道具：{{ shot.props.join('、') || '无' }}</p>
+          </article>
+          <p>收尾：{{ selected.draft.content.payload.closing }}</p>
+        </template>
+        <template v-if="selected.draft.content.payload?.allocations">
+          <h3>预算分配建议</h3>
+          <el-table :data="selected.draft.content.payload.allocations"
+            ><el-table-column prop="channel" label="渠道" /><el-table-column label="金额"
+              ><template #default="{ row }">{{ row.amount }} 元</template></el-table-column
+            ><el-table-column label="占比"
+              ><template #default="{ row }">{{ row.percent }}%</template></el-table-column
+            ></el-table
+          >
+          <h3>止损与复核规则（建议）</h3>
+          <ul>
+            <li v-for="item in selected.draft.content.payload.stop_rules" :key="item">
+              {{ item }}
+            </li>
+          </ul>
+        </template>
+        <template v-if="selected.draft.content.payload?.anomalies"
+          ><h3>待核实的经营异常</h3>
+          <p v-for="(item, i) in selected.draft.content.payload.anomalies" :key="i">
+            {{
+              selected.draft.content.metrics?.values[item.metric_ref]?.label ?? item.metric_ref
+            }}：{{ item.reasoning }}
+          </p></template
+        >
+        <h3 v-if="selected.draft.content.hypotheses.length">待验证的判断</h3>
         <ul>
           <li v-for="(item, i) in selected.draft.content.hypotheses" :key="i">{{ item.text }}</li>
         </ul>
-        <h3>建议行动</h3>
+        <h3 v-if="selected.draft.content.recommendations.length">建议行动</h3>
         <ul>
           <li v-for="(item, i) in selected.draft.content.recommendations" :key="i">
             {{ item.text }}
@@ -503,6 +857,15 @@ onUnmounted(() => {
 <style scoped>
 .el-form {
   margin-top: 24px;
+}
+.task-types {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+article {
+  border-bottom: 1px solid #e8efed;
+  padding-bottom: 12px;
 }
 .el-pagination {
   margin-top: 20px;

@@ -422,7 +422,7 @@ def renew_task(bind, task_id, enterprise_id, fence):
 
 async def run_generation(bind, task_id, enterprise_id, fence, config, secret, settings, snapshot):
     """模型请求与10秒心跳并行；取消/失租时尽力关闭HTTP，调用不自动重发。"""
-    from app.product_generator import generate
+    from app.generators import generate
 
     generation = asyncio.create_task(
         generate(config, secret, settings.allowed_model_hosts, snapshot)

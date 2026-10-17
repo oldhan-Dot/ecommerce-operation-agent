@@ -8,12 +8,14 @@ from types import SimpleNamespace
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
-from pydantic import StringConstraints, field_validator, model_validator
+from pydantic import Field, StringConstraints, field_validator, model_validator
 from sqlalchemy import func, select
 
+from app.ai_inputs import AdTask, CompetitorTask, ReviewTask, ThemeTask, VideoTask
 from app.core.errors import AppError
 from app.daily_data import business_today
 from app.dependencies import current_user, get_db, store_scope
+from app.generator_snapshot import freeze_generator
 from app.identity import audit, result, stamp
 from app.model_calls import ACTIVE, daily_usage, lock_enterprise, recover_locked, shanghai_date
 from app.model_settings import decrypt_secret
@@ -77,6 +79,12 @@ class CreateTask(Input):
     task_type: Literal["PRODUCT_ANALYSIS"]
     store_id: Identifier
     input: ProductAnalysisInput
+
+
+AnyTask = Annotated[
+    CreateTask | CompetitorTask | ThemeTask | VideoTask | AdTask | ReviewTask,
+    Field(discriminator="task_type"),
+]
 
 
 def digest(value):
@@ -210,7 +218,7 @@ def available_config(db, enterprise, settings):
 
 @router.post("/ai-tasks", status_code=202)
 def create_task(
-    body: CreateTask,
+    body: AnyTask,
     request: Request,
     response: Response,
     idempotency_key: str = Header(...),
@@ -240,17 +248,25 @@ def create_task(
         raise AppError(404, "RESOURCE_NOT_FOUND", "店铺不存在或未授权")
     if store.status != "ACTIVE":
         raise AppError(409, "STORE_ARCHIVED", "已归档店铺不能创建任务")
-    product = db.scalar(
-        select(Product)
-        .where(Product.id == int(body.input.product_id), Product.store_id == store.id)
-        .with_for_update()
+    product = (
+        db.scalar(
+            select(Product)
+            .where(Product.id == int(body.input.product_id), Product.store_id == store.id)
+            .with_for_update()
+        )
+        if body.task_type == "PRODUCT_ANALYSIS"
+        else None
     )
-    if not product:
+    if body.task_type == "PRODUCT_ANALYSIS" and not product:
         raise AppError(404, "RESOURCE_NOT_FOUND", "商品不存在或不属于当前店铺")
-    if product.status != "ACTIVE":
+    if product is not None and product.status != "ACTIVE":
         raise AppError(409, "PRODUCT_ARCHIVED", "已归档商品不能创建任务")
     config = available_config(db, enterprise, request.app.state.settings)
-    data = build_product_snapshot(db, product, body.input)
+    data = (
+        build_product_snapshot(db, product, body.input)
+        if product
+        else freeze_generator(db, store, body)
+    )
     task = AiTask(
         enterprise_id=enterprise.id,
         store_id=store.id,

@@ -161,7 +161,7 @@ def main():
             browser.click("登录")
             browser.wait("location.pathname !== '/login'")
             browser.go("/ai-tasks")
-            browser.wait("document.body.innerText.includes('AI 商品分析')")
+            browser.wait("document.body.innerText.includes('AI 运营工作台')")
             choose(browser, 0, store["name"])
             choose(browser, 1, name)
             if metrics_mode:
