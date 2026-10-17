@@ -28,6 +28,7 @@ const timeout = ref(120),
 interface ModelCall {
   call_id: string
   config_id: string
+  purpose: string
   status: string
   error_code: string | null
   latency_ms: number | null
@@ -297,6 +298,11 @@ onUnmounted(() => {
     <el-table :data="calls?.items ?? []" empty-text="暂无连接测试">
       <el-table-column prop="call_id" label="调用编号" width="110" />
       <el-table-column prop="config_id" label="配置编号" width="110" />
+      <el-table-column label="用途" width="110"
+        ><template #default="{ row }">{{
+          row.purpose === 'AI_GENERATION' ? 'AI 生成' : '连接测试'
+        }}</template></el-table-column
+      >
       <el-table-column label="状态" min-width="190"
         ><template #default="{ row }">{{
           statuses[row.status] ?? row.status

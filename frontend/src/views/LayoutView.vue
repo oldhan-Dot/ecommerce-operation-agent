@@ -27,6 +27,7 @@ async function logout() {
         <router-link to="/dashboard" active-class="selected">▥　经营概览</router-link>
         <router-link to="/stores" active-class="selected">▤　店铺管理</router-link>
         <router-link to="/products" active-class="selected">▧　商品管理</router-link>
+        <router-link to="/ai-tasks" active-class="selected">✧　AI 商品分析</router-link>
         <router-link to="/competitors" active-class="selected">▥　竞品资料</router-link>
         <router-link to="/daily-data/store" active-class="selected">▦　店铺日经营</router-link>
         <router-link to="/daily-data/product" active-class="selected">▧　商品日经营</router-link>

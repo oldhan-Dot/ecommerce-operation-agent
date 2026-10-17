@@ -10,6 +10,11 @@ export const router = createRouter({
       path: '/',
       component: () => import('./views/LayoutView.vue'),
       children: [
+        {
+          path: 'ai-tasks',
+          component: () => import('./views/AiTasksView.vue'),
+          meta: { title: 'AI 商品分析' },
+        },
         { path: '', component: () => import('./views/HomeView.vue'), meta: { title: '工作台' } },
         {
           path: 'dashboard',
